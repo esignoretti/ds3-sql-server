@@ -16,6 +16,7 @@ import (
 	"github.com/esignoretti/ds3-sql-server/internal/auth"
 	"github.com/esignoretti/ds3-sql-server/internal/api"
 	"github.com/esignoretti/ds3-sql-server/internal/config"
+	"github.com/esignoretti/ds3-sql-server/internal/s3"
 )
 
 func main() {
@@ -46,6 +47,31 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Middleware(sessionStore))
 		r.Get("/auth/me", authHandler.Me)
+
+		// S3 bucket routes
+		r.Get("/buckets", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			client, err := s3.NewClient(r.Context(), session.AccessKey, session.SecretKey, session.GatewayEndpoint)
+			if err != nil {
+				http.Error(w, `{"error":"failed to init s3 client"}`, http.StatusInternalServerError)
+				return
+			}
+			if r.Header.Get("HX-Request") == "true" {
+				api.NewBucketHandler(client).ListBucketsHTML(w, r)
+				return
+			}
+			api.NewBucketHandler(client).ListBuckets(w, r)
+		})
+
+		r.Get("/buckets/{bucket}", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			client, err := s3.NewClient(r.Context(), session.AccessKey, session.SecretKey, session.GatewayEndpoint)
+			if err != nil {
+				http.Error(w, `{"error":"failed to init s3 client"}`, http.StatusInternalServerError)
+				return
+			}
+			api.NewBucketHandler(client).ListObjects(w, r)
+		})
 	})
 
 	srv := &http.Server{
