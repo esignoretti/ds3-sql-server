@@ -50,7 +50,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	session, err := h.iamClient.Login(req.Email, req.Password)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusUnauthorized)
+		http.Error(w, `{"error":"authentication failed"}`, http.StatusUnauthorized)
 		return
 	}
 
@@ -84,7 +84,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	newSession, err := h.iamClient.Refresh(req.RefreshToken)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusUnauthorized)
+		http.Error(w, `{"error":"authentication failed"}`, http.StatusUnauthorized)
 		return
 	}
 

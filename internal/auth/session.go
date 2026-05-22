@@ -23,8 +23,8 @@ func (s *SessionStore) Set(token string, session *Session) {
 }
 
 func (s *SessionStore) Get(token string) (*Session, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	session, ok := s.sessions[token]
 	if !ok {
 		return nil, false

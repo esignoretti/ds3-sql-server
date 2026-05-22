@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"golang.org/x/crypto/ed25519"
+	"crypto/ed25519"
 )
 
 func TestKeyDerivation(t *testing.T) {

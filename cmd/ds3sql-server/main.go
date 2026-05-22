@@ -16,6 +16,7 @@ import (
 	"github.com/esignoretti/ds3-sql-server/internal/auth"
 	"github.com/esignoretti/ds3-sql-server/internal/api"
 	"github.com/esignoretti/ds3-sql-server/internal/config"
+	"github.com/esignoretti/ds3-sql-server/internal/query"
 	"github.com/esignoretti/ds3-sql-server/internal/s3"
 )
 
@@ -37,6 +38,15 @@ func main() {
 
 	r.Post("/auth/login", authHandler.Login)
 	r.Post("/auth/refresh", authHandler.Refresh)
+
+	// Query engine
+	queryEngine := query.NewEngine(
+		cfg.Query.MaxRows,
+		cfg.Query.MaxExecutionSecs,
+		cfg.Query.MaxResultBytes,
+	)
+	queryHandler := api.NewQueryHandler(queryEngine)
+	schemaHandler := api.NewSchemaHandler(queryEngine)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -72,6 +82,9 @@ func main() {
 			}
 			api.NewBucketHandler(client).ListObjects(w, r)
 		})
+
+		r.Post("/query", queryHandler.Query)
+		r.Post("/schema", schemaHandler.InferSchema)
 	})
 
 	srv := &http.Server{

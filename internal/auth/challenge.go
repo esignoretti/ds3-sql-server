@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"golang.org/x/crypto/ed25519"
+	"crypto/ed25519"
 )
 
 type challengeResponse struct {
@@ -59,8 +59,14 @@ func (c *IAMClient) Login(email, password string) (*Session, error) {
 	}
 
 	// Step 2: Sign the challenge
-	saltBytes, _ := base64.StdEncoding.DecodeString(chal.Salt)
-	challengeBytes, _ := base64.StdEncoding.DecodeString(chal.Challenge)
+	saltBytes, err := base64.StdEncoding.DecodeString(chal.Salt)
+	if err != nil {
+		return nil, fmt.Errorf("decode salt: %w", err)
+	}
+	challengeBytes, err := base64.StdEncoding.DecodeString(chal.Challenge)
+	if err != nil {
+		return nil, fmt.Errorf("decode challenge: %w", err)
+	}
 
 	key := sha256.Sum256(append([]byte(password), saltBytes...))
 	privateKey := ed25519.NewKeyFromSeed(key[:])
@@ -91,7 +97,10 @@ func (c *IAMClient) Login(email, password string) (*Session, error) {
 		return nil, fmt.Errorf("decode signin: %w", err)
 	}
 
-	expiresAt, _ := time.Parse(time.RFC3339, signin.ExpiresAt)
+	expiresAt, err := time.Parse(time.RFC3339, signin.ExpiresAt)
+	if err != nil {
+		expiresAt = time.Now().Add(24 * time.Hour)
+	}
 
 	// Step 4: Get account details (S3 credentials)
 	session := &Session{
@@ -102,7 +111,11 @@ func (c *IAMClient) Login(email, password string) (*Session, error) {
 	}
 
 	meResp, err := c.getMe(signin.Token)
-	if err == nil {
+	if err != nil {
+		session.GatewayEndpoint = ""
+		session.AccessKey = ""
+		session.SecretKey = ""
+	} else {
 		session.GatewayEndpoint = meResp.EndpointGateway
 		session.AccessKey = meResp.Account.AccessKey
 		session.SecretKey = meResp.Account.SecretKey
@@ -130,7 +143,10 @@ func (c *IAMClient) Refresh(refreshToken string) (*Session, error) {
 		return nil, fmt.Errorf("decode refresh: %w", err)
 	}
 
-	expiresAt, _ := time.Parse(time.RFC3339, signin.ExpiresAt)
+	expiresAt, err := time.Parse(time.RFC3339, signin.ExpiresAt)
+	if err != nil {
+		expiresAt = time.Now().Add(24 * time.Hour)
+	}
 
 	return &Session{
 		Token:        signin.Token,
@@ -148,6 +164,11 @@ func (c *IAMClient) getMe(token string) (*meResponse, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get me failed (%d): %s", resp.StatusCode, string(b))
+	}
 
 	var me meResponse
 	if err := json.NewDecoder(resp.Body).Decode(&me); err != nil {
