@@ -1,11 +1,11 @@
-FROM golang:1.22-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=1 go build -o /ds3sql-server ./cmd/ds3sql-server
+RUN CGO_ENABLED=0 go build -o /ds3sql-server ./cmd/ds3sql-server
 
 FROM gcr.io/distroless/base-debian12
 
