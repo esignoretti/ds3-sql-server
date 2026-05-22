@@ -13,6 +13,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/esignoretti/ds3-sql-server/internal/auth"
+	"github.com/esignoretti/ds3-sql-server/internal/api"
 	"github.com/esignoretti/ds3-sql-server/internal/config"
 )
 
@@ -27,9 +29,23 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
+	// Auth
+	iamClient := auth.NewIAMClient(cfg.IAMURL)
+	sessionStore := auth.NewSessionStore()
+	authHandler := api.NewAuthHandler(iamClient, sessionStore)
+
+	r.Post("/auth/login", authHandler.Login)
+	r.Post("/auth/refresh", authHandler.Refresh)
+
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	// Protected group
+	r.Group(func(r chi.Router) {
+		r.Use(auth.Middleware(sessionStore))
+		r.Get("/auth/me", authHandler.Me)
 	})
 
 	srv := &http.Server{
