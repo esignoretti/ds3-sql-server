@@ -45,18 +45,18 @@ func (c *Client) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
 }
 
 func (c *Client) ListObjects(ctx context.Context, bucket, prefix, delimiter string, maxKeys int32) (*ListResult, error) {
-	if delimiter == "" {
-		delimiter = "/"
-	}
 	if maxKeys <= 0 {
 		maxKeys = 100
 	}
 
 	input := &awss3.ListObjectsV2Input{
-		Bucket:    &bucket,
-		Prefix:    &prefix,
-		Delimiter: &delimiter,
-		MaxKeys:   &maxKeys,
+		Bucket:  &bucket,
+		Prefix:  &prefix,
+		MaxKeys: &maxKeys,
+	}
+
+	if delimiter != "" {
+		input.Delimiter = &delimiter
 	}
 
 	result, err := c.client.ListObjectsV2(ctx, input)

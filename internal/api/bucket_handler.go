@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"html"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -19,7 +20,9 @@ func NewBucketHandler(client *s3.Client) *BucketHandler {
 func (h *BucketHandler) ListBuckets(w http.ResponseWriter, r *http.Request) {
 	buckets, err := h.client.ListBuckets(r.Context())
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -33,7 +36,9 @@ func (h *BucketHandler) ListObjects(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.client.ListObjects(r.Context(), bucket, prefix, "/", 100)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -49,6 +54,6 @@ func (h *BucketHandler) ListBucketsHTML(w http.ResponseWriter, r *http.Request) 
 	}
 
 	for _, b := range buckets {
-		w.Write([]byte("<div class='bucket-item' onclick=\"loadPrefix('" + b.Name + "', '')\">📁 " + b.Name + "</div>"))
+		w.Write([]byte("<div class='bucket-item' onclick=\"loadPrefix('" + html.EscapeString(b.Name) + "', '')\">📁 " + html.EscapeString(b.Name) + "</div>"))
 	}
 }
