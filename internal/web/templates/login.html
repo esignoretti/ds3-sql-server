@@ -1,38 +1,37 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DS3 SQL — Login</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-</head>
-<body>
-    <div class="container center">
-        <div class="card">
-            <h1>DS3 SQL</h1>
-            <p class="subtitle">Sign in with your Cubbit account</p>
-            <form hx-post="/auth/login" hx-target="#result" hx-swap="innerHTML">
-                <div class="form-group">
-                    <label for="email">Email</label>
-                    <input type="email" id="email" name="email" required class="input">
-                </div>
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required class="input">
-                </div>
-                <button type="submit" class="btn btn-primary">Sign In</button>
-            </form>
-            <div id="result"></div>
-        </div>
+{{define "login"}}
+<div class="card login-box" style="text-align:center;">
+    <div class="login-logo">
+        <span style="font-family:'Titillium Web',Arial,sans-serif;font-weight:600;font-size:1.5rem;color:#FFFFFF;">DS3 SQL</span>
     </div>
+    <h1 style="font-family:'Titillium Web',Arial,sans-serif;font-weight:600;font-size:1.5rem;color:#FFFFFF;margin-bottom:0.5rem;">Sign in</h1>
+    <p style="color:var(--text-muted);margin-bottom:2rem;font-size:0.875rem;">Enter your Cubbit IAM credentials</p>
 
-    <script>
-        document.body.addEventListener('htmx:afterRequest', function(evt) {
-            if (evt.detail.successful) {
-                window.location.href = '/browse';
-            }
-        });
-    </script>
-</body>
-</html>
+    {{if .Error}}
+    <div class="error-message">{{.Error}}</div>
+    {{end}}
+
+    <form action="/auth/login" method="POST">
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required placeholder="user@example.com">
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <div class="form-group">
+            <label for="tfa_code">2FA Code <span class="form-help">(optional)</span></label>
+            <input type="text" id="tfa_code" name="tfa_code" placeholder="000000">
+        </div>
+        <div class="form-group">
+            <label for="tenant_id">Tenant ID <span class="form-help">(optional)</span></label>
+            <input type="text" id="tenant_id" name="tenant_id" placeholder="tenant-id">
+        </div>
+        <div class="form-group">
+            <label for="api_url">API Server URL <span class="form-help">(optional, defaults to Cubbit IAM)</span></label>
+            <input type="url" id="api_url" name="api_url" placeholder="https://api.eu00wi.cubbit.services">
+        </div>
+        <button type="submit" class="btn" style="width:100%;">Sign In</button>
+    </form>
+</div>
+{{end}}

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DS3 SQL</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;700&family=Titillium+Web:wght@600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app">
+        {{if .LoggedIn}}
+        <nav class="sidebar">
+            <div class="sidebar-logo">
+                <span>DS3 SQL</span>
+            </div>
+            <ul class="sidebar-nav">
+                <li><a href="/browse" class="{{if eq .Page "browse"}}active{{end}}">Browse</a></li>
+                <li><a href="/query" class="{{if eq .Page "query"}}active{{end}}">Query</a></li>
+            </ul>
+            <div class="sidebar-footer">
+                <form action="/auth/logout" method="GET" style="display:inline;">
+                    <button type="submit" class="btn-link">Logout</button>
+                </form>
+            </div>
+        </nav>
+        <main class="main-content">
+            {{if eq .Page "browse"}}{{template "browse" .}}
+            {{else if eq .Page "query"}}{{template "query" .}}
+            {{else}}{{template "browse" .}}{{end}}
+        </main>
+        {{else}}
+        <main class="main-content login-page">
+            {{template "login" .}}
+        </main>
+        {{end}}
+    </div>
+</body>
+</html>

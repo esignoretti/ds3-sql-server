@@ -29,6 +29,7 @@ type loginResponse struct {
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
+	var tfaCode, tenantID, apiURL string
 
 	// Accept both JSON and form-encoded
 	ct := r.Header.Get("Content-Type")
@@ -36,6 +37,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		req.Email = r.FormValue("email")
 		req.Password = r.FormValue("password")
+		tfaCode = r.FormValue("tfa_code")
+		tenantID = r.FormValue("tenant_id")
+		apiURL = r.FormValue("api_url")
 	} else {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -48,9 +52,30 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.iamClient.Login(req.Email, req.Password)
+	opts := &auth.LoginOpts{
+		TFA:      tfaCode,
+		TenantID: tenantID,
+		IAMURL:   apiURL,
+	}
+
+	session, err := h.iamClient.Login(req.Email, req.Password, opts)
 	if err != nil {
-		http.Error(w, `{"error":"authentication failed"}`, http.StatusUnauthorized)
+		// Form POST — redirect back to login with error
+		if ct == "application/x-www-form-urlencoded" {
+			http.Redirect(w, r, "/login?error=authentication+failed", http.StatusFound)
+			return
+		}
+		// HTMX — return error in HTML
+		if r.Header.Get("HX-Request") == "true" {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`<div class="error-message">Authentication failed. Check your credentials.</div>`))
+			return
+		}
+		// API — JSON
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "authentication failed"})
 		return
 	}
 
@@ -62,15 +87,50 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:    session.ExpiresAt.Format("2006-01-02T15:04:05Z"),
 	}
 
-	// HTMX requests get a redirect header; API/CLI get JSON
+	// Set cookie for browser/HTMX requests
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    session.Token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400,
+	})
+
+	// Standard form POST (from login page)
+	if ct == "application/x-www-form-urlencoded" {
+		http.Redirect(w, r, "/browse", http.StatusFound)
+		return
+	}
+
+	// HTMX requests get a redirect header
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", "/browse")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
+	// API/CLI get JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", "/login")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {

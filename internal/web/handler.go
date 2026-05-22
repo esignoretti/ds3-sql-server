@@ -13,6 +13,13 @@ var templateFS embed.FS
 //go:embed static/*
 var staticFS embed.FS
 
+type PageData struct {
+	LoggedIn    bool
+	AccountEmail string
+	Page        string
+	Error       string
+}
+
 type Handler struct {
 	templates *template.Template
 }
@@ -27,19 +34,23 @@ func NewHandler() (*Handler, error) {
 
 func (h *Handler) Static() http.Handler {
 	staticSub, _ := fs.Sub(staticFS, "static")
-	return http.FileServer(http.FS(staticSub))
+	return http.StripPrefix("/static/", http.FileServer(http.FS(staticSub)))
 }
 
 func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "login.html", nil)
+	errStr := r.URL.Query().Get("error")
+	data := PageData{Page: "login", Error: errStr}
+	h.render(w, "layout.html", data)
 }
 
 func (h *Handler) BrowsePage(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "browse.html", nil)
+	data := PageData{LoggedIn: true, Page: "browse"}
+	h.render(w, "layout.html", data)
 }
 
 func (h *Handler) QueryPage(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "query.html", nil)
+	data := PageData{LoggedIn: true, Page: "query"}
+	h.render(w, "layout.html", data)
 }
 
 func (h *Handler) render(w http.ResponseWriter, tmpl string, data interface{}) {

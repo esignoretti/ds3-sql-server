@@ -1,50 +1,31 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DS3 SQL — Browse</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-</head>
-<body>
-    <header class="navbar">
-        <span class="brand">DS3 SQL</span>
-        <nav>
-            <a href="/browse">Browse</a>
-            <a href="/query">Query</a>
-            <a href="/auth/logout" class="text-muted">Logout</a>
-        </nav>
-    </header>
-
-    <div class="container">
-        <div class="browse-layout">
-            <aside class="sidebar">
-                <h3>Buckets</h3>
-                <div id="bucket-list"
-                     hx-get="/buckets"
-                     hx-trigger="load"
-                     hx-swap="innerHTML">
-                    Loading...
-                </div>
-            </aside>
-            <main class="content">
-                <h3 id="current-path">Select a bucket or prefix</h3>
-                <div id="file-list"></div>
-            </main>
+{{define "browse"}}
+<div style="display:flex;gap:1.5rem;align-items:flex-start;">
+    <div class="card" style="flex:0 0 250px;">
+        <h2>Buckets</h2>
+        <div id="bucket-list"
+             hx-get="/buckets"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            <p style="color:var(--text-muted);font-size:0.875rem;">Loading...</p>
         </div>
     </div>
+    <div class="card" style="flex:1;">
+        <h2 id="current-path">Select a bucket or prefix</h2>
+        <div id="file-list">
+            <p style="color:var(--text-muted);font-size:0.875rem;">Choose a bucket from the sidebar</p>
+        </div>
+    </div>
+</div>
 
-    <script>
-        window.loadPrefix = function(bucket, prefix) {
-            const el = document.getElementById('file-list');
-            el.setAttribute('hx-get', '/buckets/' + encodeURIComponent(bucket) + '?prefix=' + encodeURIComponent(prefix));
-            el.setAttribute('hx-trigger', 'load');
-            el.innerHTML = 'Loading...';
-            htmx.process(el);
-            htmx.trigger(el, 'load');
-            document.getElementById('current-path').textContent = bucket + '/' + prefix;
-        };
-    </script>
-</body>
-</html>
+<script>
+    window.loadPrefix = function(bucket, prefix) {
+        const el = document.getElementById('file-list');
+        el.setAttribute('hx-get', '/buckets/' + encodeURIComponent(bucket) + '?prefix=' + encodeURIComponent(prefix));
+        el.setAttribute('hx-trigger', 'load');
+        el.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+        htmx.process(el);
+        htmx.trigger(el, 'load');
+        document.getElementById('current-path').textContent = bucket + '/' + prefix;
+    };
+</script>
+{{end}}

@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,9 +25,22 @@ import (
 )
 
 func main() {
+	port := flag.Int("port", 0, "Listening port (overrides config)")
+	flag.Parse()
+
 	cfg, err := config.Load("")
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
+	}
+
+	if *port != 0 {
+		host := ""
+		if addr := cfg.ListenAddr; addr != "" {
+			if i := strings.LastIndex(addr, ":"); i >= 0 {
+				host = addr[:i]
+			}
+		}
+		cfg.ListenAddr = host + ":" + strconv.Itoa(*port)
 	}
 
 	r := chi.NewRouter()
@@ -39,6 +55,7 @@ func main() {
 
 	r.Post("/auth/login", authHandler.Login)
 	r.Post("/auth/refresh", authHandler.Refresh)
+	r.Get("/auth/logout", authHandler.Logout)
 
 	// Query engine
 	queryEngine := query.NewEngine(
@@ -97,15 +114,15 @@ func main() {
 	// Public pages
 	r.Get("/login", webHandler.LoginPage)
 	r.Handle("/static/*", webHandler.Static())
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/login", http.StatusFound)
+	})
 
 	// Protected pages
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Middleware(sessionStore))
 		r.Get("/browse", webHandler.BrowsePage)
 		r.Get("/query", webHandler.QueryPage)
-		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/browse", http.StatusFound)
-		})
 	})
 
 	srv := &http.Server{

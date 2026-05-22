@@ -37,12 +37,26 @@ type meResponse struct {
 	} `json:"account"`
 }
 
-func (c *IAMClient) Login(email, password string) (*Session, error) {
+type LoginOpts struct {
+	TFA      string
+	TenantID string
+	IAMURL   string
+}
+
+func (c *IAMClient) Login(email, password string, opts *LoginOpts) (*Session, error) {
+	iamURL := c.iamURL
+	if opts != nil && opts.IAMURL != "" {
+		iamURL = opts.IAMURL
+	}
+
 	// Step 1: Get challenge
 	challengeReq := map[string]string{"email": email}
+	if opts != nil && opts.TenantID != "" {
+		challengeReq["tenant_id"] = opts.TenantID
+	}
 	body, _ := json.Marshal(challengeReq)
 
-	resp, err := c.client.Post(c.iamURL+"/challenge", "application/json", bytes.NewReader(body))
+	resp, err := c.client.Post(iamURL+"/challenge", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("challenge request: %w", err)
 	}
@@ -79,9 +93,21 @@ func (c *IAMClient) Login(email, password string) (*Session, error) {
 		Email:           email,
 		SignedChallenge: signed,
 	}
-	body, _ = json.Marshal(signinReq)
+	signinBody, _ := json.Marshal(signinReq)
 
-	resp, err = c.client.Post(c.iamURL+"/signin", "application/json", bytes.NewReader(body))
+	signinURL := iamURL + "/signin"
+	if opts != nil && opts.TFA != "" {
+		signinURL += "?tfa_code=" + opts.TFA
+	}
+	if opts != nil && opts.TenantID != "" {
+		if opts.TFA != "" {
+			signinURL += "&tenant_id=" + opts.TenantID
+		} else {
+			signinURL += "?tenant_id=" + opts.TenantID
+		}
+	}
+
+	resp, err = c.client.Post(signinURL, "application/json", bytes.NewReader(signinBody))
 	if err != nil {
 		return nil, fmt.Errorf("signin request: %w", err)
 	}

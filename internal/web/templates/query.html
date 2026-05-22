@@ -1,108 +1,88 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DS3 SQL — Query</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-</head>
-<body>
-    <header class="navbar">
-        <span class="brand">DS3 SQL</span>
-        <nav>
-            <a href="/browse">Browse</a>
-            <a href="/query">Query</a>
-            <a href="/auth/logout" class="text-muted">Logout</a>
-        </nav>
-    </header>
-
-    <div class="container">
-        <div class="query-layout">
-            <div class="editor-panel">
-                <h3>SQL Editor</h3>
-                <textarea id="sql-editor" rows="8" class="input code"
-                    placeholder="SELECT * FROM read_parquet('s3://bucket/prefix/*.parquet') LIMIT 10"></textarea>
-                <div style="display:flex;gap:8px;margin-top:8px;">
-                    <button class="btn btn-primary" onclick="runQuery()">▶ Run</button>
-                    <button class="btn" onclick="clearResults()">Clear</button>
-                </div>
-                <div class="text-muted" style="margin-top:4px;font-size:12px;">
-                    Ctrl+Enter to run
-                </div>
-            </div>
-            <div class="results-panel">
-                <h3>Results</h3>
-                <div id="query-status"></div>
-                <div id="query-results">
-                    <p class="text-muted">Run a query to see results</p>
-                </div>
-            </div>
+{{define "query"}}
+<div class="query-layout">
+    <div class="card editor-panel">
+        <h2>SQL Editor</h2>
+        <textarea id="sql-editor" rows="8" style="width:100%;padding:0.75rem;background:var(--surface-2);border:0.0625rem solid var(--border);border-radius:var(--radius);color:var(--text);font-family:'SF Mono','Fira Code',monospace;font-size:0.85rem;resize:vertical;margin-bottom:0.75rem;" placeholder="SELECT * FROM read_parquet('s3://bucket/prefix/*.parquet') LIMIT 10"></textarea>
+        <div style="display:flex;gap:0.5rem;">
+            <button class="btn" onclick="runQuery()">▶ Run</button>
+            <button class="btn btn-secondary" onclick="clearResults()">Clear</button>
+        </div>
+        <p style="color:var(--text-muted);font-size:0.75rem;margin-top:0.375rem;">Ctrl+Enter to run</p>
+    </div>
+    <div class="card results-panel">
+        <h2>Results</h2>
+        <div id="query-status"></div>
+        <div id="query-results">
+            <p style="color:var(--text-muted);font-size:0.875rem;">Run a query to see results</p>
         </div>
     </div>
+</div>
 
-    <script>
-        function runQuery() {
-            const sql = document.getElementById('sql-editor').value;
-            if (!sql) return;
+<script>
+    function runQuery() {
+        const sql = document.getElementById('sql-editor').value;
+        if (!sql) return;
 
-            const status = document.getElementById('query-status');
-            const results = document.getElementById('query-results');
-            status.innerHTML = 'Running...';
-            results.innerHTML = '';
+        const status = document.getElementById('query-status');
+        const results = document.getElementById('query-results');
+        status.innerHTML = '<p style="color:var(--text-muted);">Running...</p>';
+        results.innerHTML = '';
 
-            fetch('/query', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({sql: sql})
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.error) {
-                    status.innerHTML = '<span class="error">Error: ' + data.error + '</span>';
-                    return;
-                }
-                status.innerHTML = '<span class="text-muted">' + data.row_count + ' rows in ' + data.elapsed_ms + 'ms</span>';
-
-                if (data.row_count === 0) {
-                    results.innerHTML = '<p class="text-muted">No rows returned</p>';
-                    return;
-                }
-
-                let html = '<table class="table"><thead><tr>';
-                data.columns.forEach(col => {
-                    html += '<th>' + col.name + '<br><small>' + col.type + '</small></th>';
-                });
-                html += '</tr></thead><tbody>';
-                data.rows.forEach(row => {
-                    html += '<tr>';
-                    row.forEach(cell => {
-                        html += '<td>' + (cell === null ? '<span class="null">NULL</span>' : escapeHtml(String(cell))) + '</td>';
-                    });
-                    html += '</tr>';
-                });
-                html += '</tbody></table>';
-                results.innerHTML = html;
-            })
-            .catch(err => {
-                status.innerHTML = '<span class="error">Request failed: ' + err.message + '</span>';
-            });
-        }
-
-        function clearResults() {
-            document.getElementById('query-status').innerHTML = '';
-            document.getElementById('query-results').innerHTML = '<p class="text-muted">Run a query to see results</p>';
-        }
-
-        function escapeHtml(s) {
-            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-        }
-
-        document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey && e.key === 'Enter') {
-                runQuery();
+        fetch('/query', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({sql: sql})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                status.innerHTML = '<div class="error-message">Error: ' + data.error + '</div>';
+                return;
             }
+            status.innerHTML = '<p style="color:var(--text-muted);font-size:0.875rem;">' + data.row_count + ' rows in ' + data.elapsed_ms + 'ms</p>';
+
+            if (data.row_count === 0) {
+                results.innerHTML = '<p style="color:var(--text-muted);">No rows returned</p>';
+                return;
+            }
+
+            let html = '<table><thead><tr>';
+            data.columns.forEach(col => {
+                html += '<th>' + col.name + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + col.type + '</span></th>';
+            });
+            html += '</tr></thead><tbody>';
+            data.rows.forEach(row => {
+                html += '<tr>';
+                row.forEach(cell => {
+                    if (cell === null) {
+                        html += '<td style="color:var(--text-muted);font-style:italic;">NULL</td>';
+                    } else {
+                        html += '<td>' + escapeHtml(String(cell)) + '</td>';
+                    }
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            results.innerHTML = html;
+        })
+        .catch(err => {
+            status.innerHTML = '<div class="error-message">Request failed: ' + err.message + '</div>';
         });
-    </script>
-</body>
-</html>
+    }
+
+    function clearResults() {
+        document.getElementById('query-status').innerHTML = '';
+        document.getElementById('query-results').innerHTML = '<p style="color:var(--text-muted);font-size:0.875rem;">Run a query to see results</p>';
+    }
+
+    function escapeHtml(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'Enter') {
+            runQuery();
+        }
+    });
+</script>
+{{end}}
