@@ -47,7 +47,11 @@ func (e *Engine) Query(sqlStr string, accessKey, secretKey, endpoint string) *Re
 	exts := []string{"httpfs", "parquet"}
 	for _, ext := range exts {
 		if _, err := db.Exec(fmt.Sprintf("LOAD %s", ext)); err != nil {
-			return errorResult(fmt.Sprintf("load extension %s: %v", ext, err), start)
+			// Extension not installed yet — try installing first
+			db.Exec(fmt.Sprintf("INSTALL %s", ext))
+			if _, err2 := db.Exec(fmt.Sprintf("LOAD %s", ext)); err2 != nil {
+				return errorResult(fmt.Sprintf("load extension %s: %v", ext, err2), start)
+			}
 		}
 	}
 

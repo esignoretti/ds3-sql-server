@@ -29,6 +29,8 @@ func (e *Engine) InferSchema(path, accessKey, secretKey, endpoint string) *Schem
 	}
 	defer db.Close()
 
+	db.Exec("INSTALL httpfs")
+	db.Exec("INSTALL parquet")
 	db.Exec("LOAD httpfs")
 	db.Exec("LOAD parquet")
 
