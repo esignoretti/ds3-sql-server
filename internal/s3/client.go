@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -10,10 +11,17 @@ import (
 )
 
 type Client struct {
-	client *awss3.Client
+	client   *awss3.Client
+	endpoint string
 }
 
 func NewClient(ctx context.Context, accessKey, secretKey, endpoint string) (*Client, error) {
+	// Ensure endpoint has protocol for AWS SDK
+	s3Endpoint := endpoint
+	if !strings.HasPrefix(s3Endpoint, "http://") && !strings.HasPrefix(s3Endpoint, "https://") {
+		s3Endpoint = "https://" + s3Endpoint
+	}
+
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
 		config.WithRegion("us-east-1"),
@@ -23,9 +31,9 @@ func NewClient(ctx context.Context, accessKey, secretKey, endpoint string) (*Cli
 	}
 
 	client := awss3.NewFromConfig(cfg, func(o *awss3.Options) {
-		o.BaseEndpoint = aws.String(endpoint)
+		o.BaseEndpoint = aws.String(s3Endpoint)
 		o.UsePathStyle = true
 	})
 
-	return &Client{client: client}, nil
+	return &Client{client: client, endpoint: s3Endpoint}, nil
 }

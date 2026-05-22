@@ -1,31 +1,258 @@
 {{define "browse"}}
-<div style="display:flex;gap:1.5rem;align-items:flex-start;">
-    <div class="card" style="flex:0 0 250px;">
-        <h2>Buckets</h2>
-        <div id="bucket-list"
-             hx-get="/buckets"
-             hx-trigger="load"
-             hx-swap="innerHTML">
-            <p style="color:var(--text-muted);font-size:0.875rem;">Loading...</p>
-        </div>
+<div class="single-page">
+  <div class="top-bar">
+    <div class="form-group" style="margin-bottom:0;">
+      <label for="project-select">Project</label>
+      <select id="project-select" class="input" onchange="switchProject(this.value)">
+        <option value="">Select project...</option>
+        {{range .Projects}}
+        <option value="{{.ProjectID}}">{{.ProjectName}}</option>
+        {{end}}
+      </select>
     </div>
-    <div class="card" style="flex:1;">
-        <h2 id="current-path">Select a bucket or prefix</h2>
-        <div id="file-list">
-            <p style="color:var(--text-muted);font-size:0.875rem;">Choose a bucket from the sidebar</p>
-        </div>
+  </div>
+
+  <div class="main-area">
+    <div class="browser-panel">
+      <div class="panel-header">
+        <span id="breadcrumb">Select a project to browse buckets</span>
+      </div>
+      <div id="browser-content" class="panel-body">
+        <p style="color:var(--text-muted);font-size:0.875rem;">Select a project first</p>
+      </div>
     </div>
+
+    <div class="query-panel">
+      <div class="panel-header">
+        <span>Query</span>
+        <span id="selected-files-badge" style="font-size:0.8rem;color:var(--text-muted);"></span>
+      </div>
+      <div class="panel-body">
+        <textarea id="sql-editor" rows="5" style="width:100%;padding:0.5rem;background:var(--surface-2);border:0.0625rem solid var(--border);border-radius:var(--radius);color:var(--text);font-family:monospace;font-size:0.85rem;resize:vertical;margin-bottom:0.5rem;" placeholder="SELECT * FROM read_parquet('s3://bucket/*.parquet') LIMIT 100"></textarea>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="buildSQL()">🔨 Build SQL</button>
+          <button class="btn" onclick="runQuery()">▶ Run</button>
+          <button class="btn btn-secondary" onclick="clearQuery()">Clear</button>
+        </div>
+        <div id="query-status" style="font-size:0.85rem;"></div>
+        <div id="export-bar" style="display:none;gap:0.5rem;margin-bottom:0.5rem;">
+          <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="exportCSV()">⬇ CSV</button>
+          <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="exportJSON()">⬇ JSON</button>
+        </div>
+        <div id="query-results" style="overflow-x:auto;"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
+<style>
+.single-page { display:flex; flex-direction:column; gap:0.75rem; }
+.top-bar { background:var(--surface); border:0.0625rem solid var(--border); border-radius:var(--radius); padding:0.75rem 1rem; }
+.top-bar .form-group { display:flex; align-items:center; gap:0.75rem; }
+.top-bar label { margin-bottom:0; white-space:nowrap; }
+.top-bar select { width:300px; }
+.main-area { display:flex; gap:0.75rem; }
+.browser-panel { flex:2; background:var(--surface); border:0.0625rem solid var(--border); border-radius:var(--radius); display:flex; flex-direction:column; min-height:300px; }
+.query-panel { flex:3; background:var(--surface); border:0.0625rem solid var(--border); border-radius:var(--radius); display:flex; flex-direction:column; }
+.panel-header { padding:0.5rem 0.75rem; border-bottom:0.0625rem solid var(--border); font-weight:600; font-size:0.9rem; display:flex; justify-content:space-between; }
+.panel-body { padding:0.75rem; overflow-y:auto; flex:1; }
+.bucket-item { padding:0.25rem 0.5rem; cursor:pointer; border-radius:var(--radius); font-size:0.85rem; }
+.bucket-item:hover { background:var(--surface-2); }
+</style>
+
 <script>
-    window.loadPrefix = function(bucket, prefix) {
-        const el = document.getElementById('file-list');
-        el.setAttribute('hx-get', '/buckets/' + encodeURIComponent(bucket) + '?prefix=' + encodeURIComponent(prefix));
-        el.setAttribute('hx-trigger', 'load');
-        el.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
-        htmx.process(el);
-        htmx.trigger(el, 'load');
-        document.getElementById('current-path').textContent = bucket + '/' + prefix;
-    };
+var selPaths = [];
+var selBucket = '';
+var selProject = '';
+var lastResult = null;
+
+function switchProject(id) {
+  if (!id) return;
+  selProject = id;
+  selBucket = '';
+  selPaths = [];
+  document.getElementById('breadcrumb').textContent = 'Loading buckets...';
+  document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+  fetch('/buckets?project=' + encodeURIComponent(id))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--red);">' + d.error + '</p>'; return; }
+      if (!d.buckets || !d.buckets.length) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">No buckets</p>'; return; }
+      document.getElementById('breadcrumb').textContent = 'Buckets';
+      var html = '';
+      d.buckets.forEach(function(b) { html += '<div class="bucket-item" onclick="loadPrefix(\'' + escJs(b.name) + '\',\'\')">📁 ' + escHtml(b.name) + '</div>'; });
+      html += '<div style="margin-top:0.75rem;border-top:0.0625rem solid var(--border);padding-top:0.75rem;">';
+      html += '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.25rem;">Or enter a bucket name:</div>';
+      html += '<div style="display:flex;gap:0.5rem;"><input type="text" id="manual-bucket" class="input" placeholder="my-bucket" style="flex:1;">';
+      html += '<button class="btn btn-secondary" onclick="manualBucket()">Open</button></div></div>';
+      document.getElementById('browser-content').innerHTML = html;
+    })
+    .catch(function(e) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--red);">Error: ' + e.message + '</p>'; });
+}
+
+function loadPrefix(bucket, prefix) {
+  selBucket = bucket;
+  var crumb = document.getElementById('breadcrumb');
+  crumb.textContent = bucket + '/' + prefix;
+  document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+  fetch('/buckets/' + encodeURIComponent(bucket) + '?project=' + encodeURIComponent(selProject) + '&prefix=' + encodeURIComponent(prefix))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--red);">' + d.error + '</p>'; return; }
+      var html = '';
+      d.prefixes.forEach(function(p) {
+        var name = p.replace(/\/$/,'').split('/').pop();
+        html += '<div class="bucket-item" onclick="loadPrefix(\'' + escJs(bucket) + '\',\'' + escJs(p) + '\')">📁 ' + escHtml(name) + '</div>';
+      });
+      var supported = d.objects.filter(function(o) { var l = o.key.toLowerCase(); return l.endsWith('.parquet') || l.endsWith('.csv') || l.endsWith('.json') || l.endsWith('.jsonl') || l.endsWith('.tsv'); });
+      var others = d.objects.filter(function(o) { var l = o.key.toLowerCase(); return !(l.endsWith('.parquet') || l.endsWith('.csv') || l.endsWith('.json') || l.endsWith('.jsonl') || l.endsWith('.tsv')); });
+      if (supported.length) {
+        html += '<div style="margin-top:0.5rem;font-size:0.85rem;color:var(--text-muted);">Queryable files — click to add:</div>';
+        supported.forEach(function(o) {
+          var s3path = 's3://' + bucket + '/' + o.key;
+          html += '<div class="bucket-item" onclick="togglePath(\'' + escAttr(s3path) + '\',this)">☐ ' + escHtml(o.key.split('/').pop()) + ' <span style="color:var(--text-muted);font-size:0.75rem;">' + fmtSize(o.size) + '</span></div>';
+        });
+      }
+      if (others.length) {
+        html += '<details style="margin-top:0.5rem;"><summary style="cursor:pointer;color:var(--text-muted);font-size:0.85rem;">Other (' + others.length + ')</summary>';
+        others.forEach(function(o) { html += '<div style="opacity:0.5;font-size:0.8rem;">' + escHtml(o.key.split('/').pop()) + '</div>'; });
+        html += '</details>';
+      }
+      if (!supported.length && !d.prefixes.length) { html = '<p style="color:var(--text-muted);">No supported files</p>'; }
+      document.getElementById('browser-content').innerHTML = html;
+    })
+    .catch(function(e) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--red);">Error: ' + e.message + '</p>'; });
+}
+
+function manualBucket() {
+  var bucket = document.getElementById('manual-bucket').value.trim();
+  if (!bucket) { alert('Enter a bucket name'); return; }
+  loadPrefix(bucket, '');
+}
+
+function togglePath(path, el) {
+  var idx = selPaths.indexOf(path);
+  if (idx >= 0) { selPaths.splice(idx, 1); el.innerHTML = '☐ ' + el.textContent.trim().substring(2); }
+  else { selPaths.push(path); el.innerHTML = '☑ ' + el.textContent.trim().substring(2); }
+  updateBadge();
+}
+
+function updateBadge() {
+  var b = document.getElementById('selected-files-badge');
+  b.textContent = selPaths.length ? selPaths.length + ' file(s) selected' : '';
+}
+
+function buildSQL() {
+  if (!selPaths.length) { alert('Click files in the browser to select them'); return; }
+  var prefix = selPaths[0].substring(0, selPaths[0].lastIndexOf('/') + 1);
+  var same = selPaths.every(function(p) { return p.startsWith(prefix); });
+  var sql;
+  if (same && selPaths.length > 1) {
+    var ext = selPaths[0].split('.').pop();
+    var allSame = selPaths.every(function(p) { return p.endsWith('.' + ext); });
+    sql = "SELECT * FROM " + reader(selPaths[0]) + "('" + prefix + "*." + (allSame ? ext : '*') + "') LIMIT 100";
+  } else {
+    sql = selPaths.map(function(p) { return "SELECT * FROM " + reader(p) + "('" + p + "')"; }).join('\nUNION ALL\n') + '\nLIMIT 100';
+  }
+  document.getElementById('sql-editor').value = sql;
+}
+
+function reader(p) {
+  var l = p.toLowerCase();
+  if (l.endsWith('.csv') || l.endsWith('.tsv')) return 'read_csv_auto';
+  if (l.endsWith('.json') || l.endsWith('.jsonl')) return 'read_json_auto';
+  return 'read_parquet';
+}
+
+function runQuery() {
+  var sql = document.getElementById('sql-editor').value;
+  if (!sql) { alert('Write a query or click Build SQL'); return; }
+  if (!selProject) { alert('Select a project'); return; }
+  var status = document.getElementById('query-status');
+  var results = document.getElementById('query-results');
+  status.innerHTML = 'Running...';
+  results.innerHTML = '';
+  fetch('/query?project=' + encodeURIComponent(selProject), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: sql})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) { status.innerHTML = '<span class="error">' + d.error + '</span>'; document.getElementById('export-bar').style.display = 'none'; return; }
+    lastResult = d;
+    status.innerHTML = d.row_count + ' rows in ' + d.elapsed_ms + 'ms';
+    document.getElementById('export-bar').style.display = d.row_count ? 'flex' : 'none';
+    if (!d.row_count) { results.innerHTML = '<p style="color:var(--text-muted);">No rows</p>'; return; }
+    var h = '<table><thead><tr>';
+    d.columns.forEach(function(c) { h += '<th>' + c.name + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + c.type + '</span></th>'; });
+    h += '</tr></thead><tbody>';
+    d.rows.forEach(function(r) {
+      h += '<tr>';
+      r.forEach(function(v) { h += '<td>' + (v === null ? '<span style="color:var(--text-muted);font-style:italic;">NULL</span>' : escHtml(String(v))) + '</td>'; });
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+    results.innerHTML = h;
+  })
+  .catch(function(e) { status.innerHTML = '<span class="error">Error: ' + e.message + '</span>'; });
+}
+
+function clearQuery() {
+  document.getElementById('sql-editor').value = '';
+  document.getElementById('query-status').innerHTML = '';
+  document.getElementById('query-results').innerHTML = '';
+  document.getElementById('export-bar').style.display = 'none';
+  lastResult = null;
+}
+
+function exportCSV() {
+  if (!lastResult) return;
+  var cols = lastResult.columns.map(function(c) { return c.name; });
+  var lines = [cols.map(escCsv).join(',')];
+  lastResult.rows.forEach(function(r) {
+    lines.push(r.map(function(v) { return escCsv(v === null ? '' : String(v)); }).join(','));
+  });
+  download(lines.join('\n'), 'query-result.csv', 'text/csv');
+}
+
+function exportJSON() {
+  if (!lastResult) return;
+  var arr = lastResult.rows.map(function(r) {
+    var o = {};
+    lastResult.columns.forEach(function(c, i) { o[c.name] = r[i]; });
+    return o;
+  });
+  download(JSON.stringify(arr, null, 2), 'query-result.json', 'application/json');
+}
+
+function download(content, filename, mime) {
+  var blob = new Blob([content], {type: mime});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function escCsv(s) {
+  if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function fmtSize(b) {
+  if (!b) return '0B';
+  var u = ['B','KB','MB','GB','TB'], i = Math.floor(Math.log(b) / Math.log(1024));
+  return (b / Math.pow(1024, i)).toFixed(1) + ' ' + u[i];
+}
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escJs(s) { return s.replace(/'/g,"\\'").replace(/"/g,'\\"'); }
+function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+document.addEventListener('keydown', function(e) {
+  if (e.ctrlKey && e.key === 'Enter') { runQuery(); }
+});
 </script>
 {{end}}

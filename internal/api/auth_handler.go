@@ -2,7 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/esignoretti/ds3-sql-server/internal/auth"
 )
@@ -16,38 +19,31 @@ func NewAuthHandler(iamClient *auth.IAMClient, store *auth.SessionStore) *AuthHa
 	return &AuthHandler{iamClient: iamClient, store: store}
 }
 
-type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type loginResponse struct {
-	Token        string `json:"token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresAt    string `json:"expires_at"`
-}
-
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	var req loginRequest
-	var tfaCode, tenantID, apiURL string
+	var email, password, tfaCode, tenantID, apiURL string
 
-	// Accept both JSON and form-encoded
 	ct := r.Header.Get("Content-Type")
 	if ct == "application/x-www-form-urlencoded" {
 		r.ParseForm()
-		req.Email = r.FormValue("email")
-		req.Password = r.FormValue("password")
+		email = r.FormValue("email")
+		password = r.FormValue("password")
 		tfaCode = r.FormValue("tfa_code")
 		tenantID = r.FormValue("tenant_id")
 		apiURL = r.FormValue("api_url")
 	} else {
+		var req struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 			return
 		}
+		email = req.Email
+		password = req.Password
 	}
 
-	if req.Email == "" || req.Password == "" {
+	if email == "" || password == "" {
 		http.Error(w, `{"error":"email and password required"}`, http.StatusBadRequest)
 		return
 	}
@@ -58,36 +54,83 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		IAMURL:   apiURL,
 	}
 
-	session, err := h.iamClient.Login(req.Email, req.Password, opts)
+	log.Printf("login: %s", email)
+	session, err := h.iamClient.Login(email, password, opts)
 	if err != nil {
-		// Form POST — redirect back to login with error
+		errMsg := "Authentication failed: " + err.Error()
+		log.Printf("login failed: %v", err)
 		if ct == "application/x-www-form-urlencoded" {
-			http.Redirect(w, r, "/login?error=authentication+failed", http.StatusFound)
+			http.Redirect(w, r, "/login?error="+url.QueryEscape(errMsg), http.StatusFound)
 			return
 		}
-		// HTMX — return error in HTML
-		if r.Header.Get("HX-Request") == "true" {
-			w.Header().Set("Content-Type", "text/html")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`<div class="error-message">Authentication failed. Check your credentials.</div>`))
-			return
-		}
-		// API — JSON
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "authentication failed"})
+		json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
+		return
+	}
+
+	// Fetch account
+	account, err := h.iamClient.GetAccount(session.Token)
+	if err != nil {
+		errMsg := "Authentication failed: " + err.Error()
+		log.Printf("get account failed: %v", err)
+		if ct == "application/x-www-form-urlencoded" {
+			http.Redirect(w, r, "/login?error="+url.QueryEscape(errMsg), http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
+		return
+	}
+	session.GatewayEndpoint = stripProtocol(account.EndpointGateway)
+
+	// Fetch projects and create S3 credentials
+	projects, err := h.iamClient.GetProjects(session.Token)
+	if err != nil {
+		errMsg := "Authentication failed: " + err.Error()
+		log.Printf("get projects failed: %v", err)
+		if ct == "application/x-www-form-urlencoded" {
+			http.Redirect(w, r, "/login?error="+url.QueryEscape(errMsg), http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
+		return
+	}
+
+	for _, p := range projects {
+		log.Printf("project: %s (%s), users=%d", p.Name, p.ID, len(p.Users))
+		for _, u := range p.Users {
+			cred := h.reconcileProjectCredential(u.UserID, u.UserName, p.Name)
+			if cred != nil {
+				session.Projects = append(session.Projects, auth.ProjectCred{
+					ProjectID:   p.ID,
+					ProjectName: p.Name,
+					AccessKey:   cred.ApiKey,
+					SecretKey:   cred.SecretKey,
+				})
+				break
+			}
+		}
+	}
+
+	if len(session.Projects) == 0 {
+		errMsg := "Authentication failed: no projects with accessible credentials"
+		log.Printf("no projects configured for %s", email)
+		if ct == "application/x-www-form-urlencoded" {
+			http.Redirect(w, r, "/login?error="+url.QueryEscape(errMsg), http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
 		return
 	}
 
 	h.store.Set(session.Token, session)
 
-	resp := loginResponse{
-		Token:        session.Token,
-		RefreshToken: session.RefreshToken,
-		ExpiresAt:    session.ExpiresAt.Format("2006-01-02T15:04:05Z"),
-	}
-
-	// Set cookie for browser/HTMX requests
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",
 		Value:    session.Token,
@@ -97,40 +140,53 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   86400,
 	})
 
-	// Standard form POST (from login page)
 	if ct == "application/x-www-form-urlencoded" {
 		http.Redirect(w, r, "/browse", http.StatusFound)
 		return
 	}
 
-	// HTMX requests get a redirect header
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", "/browse")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// API/CLI get JSON
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(map[string]string{"token": session.Token})
 }
 
-func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     "token",
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		MaxAge:   -1,
-	})
+func stripProtocol(u string) string {
+	for _, p := range []string{"https://", "http://"} {
+		if strings.HasPrefix(u, p) {
+			return u[len(p):]
+		}
+	}
+	return u
+}
 
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", "/login")
-		w.WriteHeader(http.StatusOK)
-		return
+func (h *AuthHandler) reconcileProjectCredential(userID, userName, projectName string) *auth.APIKey {
+	forgeResp, err := h.iamClient.ForgeJWT(userID)
+	if err != nil {
+		log.Printf("forge for user %s failed: %v", userName, err)
+		return nil
 	}
 
-	http.Redirect(w, r, "/login", http.StatusFound)
+	keyName := auth.S3KeyName(userName, projectName)
+
+	// Always remove existing key first to force a fresh create (so we get the secret)
+	existing, err := h.iamClient.ListAPIKeys(userID, forgeResp.Token)
+	if err == nil {
+		for _, k := range existing {
+			if k.Name == keyName {
+				h.iamClient.DeleteAPIKey(k.ApiKey, userID, forgeResp.Token)
+				log.Printf("deleted stale key %s", keyName)
+				break
+			}
+		}
+	}
+
+	// Create new key
+	created, err := h.iamClient.CreateAPIKey(keyName, userID, forgeResp.Token)
+	if err != nil {
+		log.Printf("create key %s failed: %v", keyName, err)
+		return nil
+	}
+	log.Printf("created key %s for %s/%s (secret=%s...)", keyName, userName, projectName, created.SecretKey[:min(8, len(created.SecretKey))])
+	return created
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
@@ -142,22 +198,28 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newSession, err := h.iamClient.Refresh(req.RefreshToken)
+	session, err := h.iamClient.Refresh(req.RefreshToken)
 	if err != nil {
-		http.Error(w, `{"error":"authentication failed"}`, http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
-	h.store.Set(newSession.Token, newSession)
+	h.store.Set(session.Token, session)
 
-	resp := loginResponse{
-		Token:        newSession.Token,
-		RefreshToken: newSession.RefreshToken,
-		ExpiresAt:    newSession.ExpiresAt.Format("2006-01-02T15:04:05Z"),
-	}
+	json.NewEncoder(w).Encode(map[string]string{"token": session.Token})
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
@@ -167,14 +229,18 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := struct {
-		Email           string `json:"email"`
-		GatewayEndpoint string `json:"gateway_endpoint"`
-	}{
-		Email:           session.Email,
-		GatewayEndpoint: session.GatewayEndpoint,
+	type projectResp struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	projs := make([]projectResp, len(session.Projects))
+	for i, p := range session.Projects {
+		projs[i] = projectResp{ID: p.ProjectID, Name: p.ProjectName}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"email":    session.Email,
+		"projects": projs,
+	})
 }

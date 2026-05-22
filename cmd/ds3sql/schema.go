@@ -8,6 +8,7 @@ import (
 )
 
 func init() {
+	schemaCmd.Flags().StringP("project", "p", "", "Project ID (defaults to first project)")
 	rootCmd.AddCommand(schemaCmd)
 }
 
@@ -24,7 +25,13 @@ Example: ds3sql schema 's3://my-bucket/logs/*.parquet'`,
 		}
 
 		body, _ := json.Marshal(map[string]string{"path": args[0]})
-		data, err := authedPost(cfg, "/schema", body)
+
+		path := "/schema"
+		if p, _ := cmd.Flags().GetString("project"); p != "" {
+			path += "?project=" + p
+		}
+
+		data, err := authedPost(cfg, path, body)
 		if err != nil {
 			return err
 		}
@@ -43,6 +50,11 @@ Example: ds3sql schema 's3://my-bucket/logs/*.parquet'`,
 
 		if result.Error != "" {
 			return fmt.Errorf("schema error: %s", result.Error)
+		}
+
+		if len(result.Columns) == 0 {
+			fmt.Println("No columns found")
+			return nil
 		}
 
 		fmt.Printf("%-30s %-20s %s\n", "COLUMN", "TYPE", "NULLABLE")

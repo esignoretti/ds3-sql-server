@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,6 +11,7 @@ import (
 
 func init() {
 	lsCmd.Flags().StringP("prefix", "p", "", "Prefix to filter by")
+	lsCmd.Flags().String("project", "", "Project ID (defaults to first project)")
 	rootCmd.AddCommand(lsCmd)
 }
 
@@ -26,12 +28,19 @@ var lsCmd = &cobra.Command{
 		bucket := args[0]
 		prefix, _ := cmd.Flags().GetString("prefix")
 
-		url := fmt.Sprintf("/buckets/%s", bucket)
+		apiPath := fmt.Sprintf("/buckets/%s", bucket)
+		q := make([]string, 0)
 		if prefix != "" {
-			url += "?prefix=" + prefix
+			q = append(q, "prefix="+url.QueryEscape(prefix))
+		}
+		if p, _ := cmd.Flags().GetString("project"); p != "" {
+			q = append(q, "project="+url.QueryEscape(p))
+		}
+		if len(q) > 0 {
+			apiPath += "?" + strings.Join(q, "&")
 		}
 
-		data, err := authedGet(cfg, url)
+		data, err := authedGet(cfg, apiPath)
 		if err != nil {
 			return err
 		}
@@ -43,10 +52,14 @@ var lsCmd = &cobra.Command{
 				Size         int64  `json:"size"`
 				LastModified string `json:"last_modified"`
 			} `json:"objects"`
-			IsTruncated bool `json:"is_truncated"`
+			IsTruncated bool   `json:"is_truncated"`
+			Error       string `json:"error"`
 		}
 		if err := json.Unmarshal(data, &result); err != nil {
 			return fmt.Errorf("parse response: %w", err)
+		}
+		if result.Error != "" {
+			return fmt.Errorf("server error: %s", result.Error)
 		}
 
 		for _, p := range result.Prefixes {

@@ -47,6 +47,7 @@ func (h *BucketHandler) ListObjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BucketHandler) ListBucketsHTML(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	buckets, err := h.client.ListBuckets(r.Context())
 	if err != nil {
 		w.Write([]byte("<p class='error'>Error loading buckets</p>"))

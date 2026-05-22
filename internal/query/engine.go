@@ -3,6 +3,8 @@ package query
 import (
 	"database/sql"
 	"fmt"
+	"log"
+	"strings"
 	"time"
 
 	_ "github.com/marcboeker/go-duckdb"
@@ -35,8 +37,16 @@ func NewEngine(maxRows int, maxExecutionSecs int, maxResultBytes int64) *Engine 
 	}
 }
 
-func (e *Engine) Query(sqlStr string, accessKey, secretKey, endpoint string) *Result {
+func (e *Engine) Query(sqlStr string, accessKey, secretKey, rawEndpoint string) *Result {
 	start := time.Now()
+
+	useSSL := true
+	endpoint := rawEndpoint
+	if idx := strings.Index(endpoint, "://"); idx >= 0 {
+		proto := endpoint[:idx]
+		useSSL = proto == "https"
+		endpoint = endpoint[idx+3:]
+	}
 
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
@@ -47,7 +57,6 @@ func (e *Engine) Query(sqlStr string, accessKey, secretKey, endpoint string) *Re
 	exts := []string{"httpfs", "parquet"}
 	for _, ext := range exts {
 		if _, err := db.Exec(fmt.Sprintf("LOAD %s", ext)); err != nil {
-			// Extension not installed yet — try installing first
 			db.Exec(fmt.Sprintf("INSTALL %s", ext))
 			if _, err2 := db.Exec(fmt.Sprintf("LOAD %s", ext)); err2 != nil {
 				return errorResult(fmt.Sprintf("load extension %s: %v", ext, err2), start)
@@ -55,30 +64,25 @@ func (e *Engine) Query(sqlStr string, accessKey, secretKey, endpoint string) *Re
 		}
 	}
 
-	s3Config := fmt.Sprintf(`
-		CREATE SECRET ds3_s3 (
-			TYPE S3,
-			KEY_ID '%s',
-			SECRET '%s',
-			ENDPOINT '%s',
-			REGION 'us-east-1',
-			USE_SSL false,
-			URL_STYLE 'path'
-		)
-	`, accessKey, secretKey, endpoint)
+	useSSLStr := "false"
+	if useSSL {
+		useSSLStr = "true"
+	}
 
-	if _, err := db.Exec(s3Config); err != nil {
-		fallback := fmt.Sprintf(`
-			SET s3_access_key_id='%s';
-			SET s3_secret_access_key='%s';
-			SET s3_endpoint='%s';
-			SET s3_region='us-east-1';
-			SET s3_url_style='path';
-			SET s3_use_ssl=false;
-		`, accessKey, secretKey, endpoint)
-		if _, err2 := db.Exec(fallback); err2 != nil {
-			return errorResult(fmt.Sprintf("configure s3: %v (secret: %v)", err, err2), start)
-		}
+	log.Printf("DuckDB S3 config: endpoint=%s use_ssl=%s raw=%s", endpoint, useSSLStr, rawEndpoint)
+
+	// Try CREATE SECRET (DuckDB >= 0.10); fallback to SET vars
+	db.Exec("CREATE SECRET ds3_s3 (TYPE S3, KEY_ID '" + accessKey + "', SECRET '" + secretKey + "', ENDPOINT '" + endpoint + "', REGION 'us-east-1', USE_SSL " + useSSLStr + ", URL_STYLE 'path')")
+	// DuckDB >= 0.8 fallback
+	db.Exec("SET s3_access_key_id='" + accessKey + "'")
+	db.Exec("SET s3_secret_access_key='" + secretKey + "'")
+	db.Exec("SET s3_endpoint='" + endpoint + "'")
+	db.Exec("SET s3_region='us-east-1'")
+	db.Exec("SET s3_url_style='path'")
+	if useSSL {
+		db.Exec("SET s3_use_ssl=true")
+	} else {
+		db.Exec("SET s3_use_ssl=false")
 	}
 
 	if _, err := db.Exec("SET memory_limit='512MB'; SET threads=2;"); err != nil {

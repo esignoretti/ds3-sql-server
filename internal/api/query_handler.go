@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/esignoretti/ds3-sql-server/internal/auth"
 	"github.com/esignoretti/ds3-sql-server/internal/query"
 )
 
@@ -21,13 +20,7 @@ type queryRequest struct {
 	Bucket string `json:"bucket"`
 }
 
-func (h *QueryHandler) Query(w http.ResponseWriter, r *http.Request) {
-	session := auth.GetSession(r)
-	if session == nil {
-		http.Error(w, `{"error":"not authenticated"}`, http.StatusUnauthorized)
-		return
-	}
-
+func (h *QueryHandler) QueryWithCreds(w http.ResponseWriter, r *http.Request, accessKey, secretKey, endpoint string) {
 	var req queryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -39,7 +32,7 @@ func (h *QueryHandler) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := h.engine.Query(req.SQL, session.AccessKey, session.SecretKey, session.GatewayEndpoint)
+	result := h.engine.Query(req.SQL, accessKey, secretKey, endpoint)
 
 	w.Header().Set("Content-Type", "application/json")
 	if result.Error != "" {

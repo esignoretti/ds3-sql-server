@@ -36,7 +36,7 @@ type RateLimitConfig struct {
 func Default() *Config {
 	return &Config{
 		ListenAddr:    ":8080",
-		IAMURL:        "https://iam.cubbit.eu",
+		IAMURL:         "https://api.eu00wi.cubbit.services",
 		DS3GatewayURL: "http://localhost:9000",
 		Auth: AuthConfig{
 			TokenExpiry:        24 * time.Hour,

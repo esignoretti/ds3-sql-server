@@ -36,7 +36,6 @@
 }
 
 body {
-
     font-family: "Source Sans 3", "Segoe UI", Roboto, Arial, sans-serif;
     background: var(--bg);
     color: var(--text);
@@ -286,4 +285,8 @@ tbody tr:hover {
 
 .object-row:last-child {
     border-bottom: none;
+}
+
+.error {
+    color: var(--red);
 }

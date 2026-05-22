@@ -3,6 +3,7 @@ package s3
 import (
 	"context"
 	"fmt"
+	"time"
 
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 )
@@ -25,6 +26,8 @@ type ListResult struct {
 }
 
 func (c *Client) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	result, err := c.client.ListBuckets(ctx, &awss3.ListBucketsInput{})
 	if err != nil {
 		return nil, fmt.Errorf("list buckets: %w", err)
@@ -45,6 +48,8 @@ func (c *Client) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
 }
 
 func (c *Client) ListObjects(ctx context.Context, bucket, prefix, delimiter string, maxKeys int32) (*ListResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	if maxKeys <= 0 {
 		maxKeys = 100
 	}
@@ -64,7 +69,10 @@ func (c *Client) ListObjects(ctx context.Context, bucket, prefix, delimiter stri
 		return nil, fmt.Errorf("list objects: %w", err)
 	}
 
-	var resp ListResult
+	resp := ListResult{
+		Prefixes: make([]string, 0),
+		Objects:  make([]ObjectInfo, 0),
+	}
 
 	for _, cp := range result.CommonPrefixes {
 		if cp.Prefix != nil {

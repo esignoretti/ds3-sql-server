@@ -3,6 +3,7 @@ package query
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/marcboeker/go-duckdb"
@@ -20,8 +21,16 @@ type SchemaResult struct {
 	Error     string         `json:"error,omitempty"`
 }
 
-func (e *Engine) InferSchema(path, accessKey, secretKey, endpoint string) *SchemaResult {
+func (e *Engine) InferSchema(path, accessKey, secretKey, rawEndpoint string) *SchemaResult {
 	start := time.Now()
+
+	useSSL := true
+	endpoint := rawEndpoint
+	if idx := strings.Index(endpoint, "://"); idx >= 0 {
+		proto := endpoint[:idx]
+		useSSL = proto == "https"
+		endpoint = endpoint[idx+3:]
+	}
 
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
@@ -34,26 +43,35 @@ func (e *Engine) InferSchema(path, accessKey, secretKey, endpoint string) *Schem
 	db.Exec("LOAD httpfs")
 	db.Exec("LOAD parquet")
 
+	useSSLStr := "false"
+	if useSSL {
+		useSSLStr = "true"
+	}
+
 	s3Cfg := fmt.Sprintf(`
 		CREATE SECRET ds3_s3 (
 			TYPE S3, KEY_ID '%s', SECRET '%s',
 			ENDPOINT '%s', REGION 'us-east-1',
-			USE_SSL false, URL_STYLE 'path'
+			USE_SSL %s, URL_STYLE 'path'
 		)
-	`, accessKey, secretKey, endpoint)
+	`, accessKey, secretKey, endpoint, useSSLStr)
 	if _, err := db.Exec(s3Cfg); err != nil {
-		db.Exec(fmt.Sprintf("SET s3_access_key_id='%s'; SET s3_secret_access_key='%s'; SET s3_endpoint='%s'; SET s3_region='us-east-1'; SET s3_url_style='path'; SET s3_use_ssl=false", accessKey, secretKey, endpoint))
+		db.Exec(fmt.Sprintf("SET s3_access_key_id='%s'; SET s3_secret_access_key='%s'; SET s3_endpoint='%s'; SET s3_region='us-east-1'; SET s3_url_style='path'; SET s3_use_ssl=%s", accessKey, secretKey, endpoint, useSSLStr))
 	}
 
 	schemaSQL := fmt.Sprintf("DESCRIBE SELECT * FROM read_parquet('%s')", path)
 
-	rows, err := db.Query(schemaSQL)
-	if err != nil {
-		schemaSQL = fmt.Sprintf("DESCRIBE SELECT * FROM read_csv_auto('%s')", path)
-		rows, err = db.Query(schemaSQL)
-		if err != nil {
-			return &SchemaResult{Error: err.Error(), ElapsedMs: time.Since(start).Milliseconds()}
+	var rows *sql.Rows
+	var lastErr error
+	for _, reader := range []string{"read_parquet", "read_csv_auto", "read_json_auto"} {
+		schemaSQL = fmt.Sprintf("DESCRIBE SELECT * FROM %s('%s')", reader, path)
+		rows, lastErr = db.Query(schemaSQL)
+		if lastErr == nil {
+			break
 		}
+	}
+	if lastErr != nil {
+		return &SchemaResult{Error: lastErr.Error(), ElapsedMs: time.Since(start).Milliseconds()}
 	}
 	defer rows.Close()
 

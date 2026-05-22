@@ -1,0 +1,26 @@
+-- DS3 SQL Server — Example Queries
+-- Assumes customers-1000.csv is uploaded to s3://my-bucket/customers-1000.csv
+
+-- List first 10 rows
+SELECT * FROM read_csv_auto('s3://my-bucket/customers-1000.csv') LIMIT 10;
+
+-- Query specific columns with filter
+SELECT "First Name", "Last Name", Company, Country
+FROM read_csv_auto('s3://my-bucket/customers-1000.csv')
+WHERE Country = 'China'
+LIMIT 20;
+
+-- Aggregate: count customers per country
+SELECT Country, count(*) as cnt
+FROM read_csv_auto('s3://my-bucket/customers-1000.csv')
+GROUP BY Country
+ORDER BY cnt DESC
+LIMIT 10;
+
+-- Search for a specific customer
+SELECT * FROM read_csv_auto('s3://my-bucket/customers-1000.csv')
+WHERE "First Name" = 'John' OR "Last Name" = 'Doe';
+
+-- Count total rows
+SELECT count(*) as total_customers
+FROM read_csv_auto('s3://my-bucket/customers-1000.csv');

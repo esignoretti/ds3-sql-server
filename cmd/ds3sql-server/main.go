@@ -76,33 +76,62 @@ func main() {
 		r.Use(auth.Middleware(sessionStore))
 		r.Get("/auth/me", authHandler.Me)
 
-		// S3 bucket routes
-		r.Get("/buckets", func(w http.ResponseWriter, r *http.Request) {
+			s3ClientForProject := func(r *http.Request) *s3.Client {
 			session := auth.GetSession(r)
-			client, err := s3.NewClient(r.Context(), session.AccessKey, session.SecretKey, session.GatewayEndpoint)
-			if err != nil {
-				http.Error(w, `{"error":"failed to init s3 client"}`, http.StatusInternalServerError)
-				return
+			projectID := r.URL.Query().Get("project")
+			for _, p := range session.Projects {
+				if projectID == "" || p.ProjectID == projectID {
+					client, err := s3.NewClient(r.Context(), p.AccessKey, p.SecretKey, session.GatewayEndpoint)
+					if err != nil {
+						return nil
+					}
+					return client
+				}
 			}
-			if r.Header.Get("HX-Request") == "true" {
-				api.NewBucketHandler(client).ListBucketsHTML(w, r)
+			return nil
+		}
+
+		r.Get("/buckets", func(w http.ResponseWriter, r *http.Request) {
+			client := s3ClientForProject(r)
+			if client == nil {
+				http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 				return
 			}
 			api.NewBucketHandler(client).ListBuckets(w, r)
 		})
 
 		r.Get("/buckets/{bucket}", func(w http.ResponseWriter, r *http.Request) {
-			session := auth.GetSession(r)
-			client, err := s3.NewClient(r.Context(), session.AccessKey, session.SecretKey, session.GatewayEndpoint)
-			if err != nil {
-				http.Error(w, `{"error":"failed to init s3 client"}`, http.StatusInternalServerError)
+			client := s3ClientForProject(r)
+			if client == nil {
+				http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 				return
 			}
 			api.NewBucketHandler(client).ListObjects(w, r)
 		})
 
-		r.Post("/query", queryHandler.Query)
-		r.Post("/schema", schemaHandler.InferSchema)
+		r.Post("/query", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
+			for _, p := range session.Projects {
+				if projectID == "" || p.ProjectID == projectID {
+					queryHandler.QueryWithCreds(w, r, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
+					return
+				}
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+
+		r.Post("/schema", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
+			for _, p := range session.Projects {
+				if projectID == "" || p.ProjectID == projectID {
+					schemaHandler.InferSchemaWithCreds(w, r, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
+					return
+				}
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
 	})
 
 	// Web UI

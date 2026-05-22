@@ -5,6 +5,8 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+
+	"github.com/esignoretti/ds3-sql-server/internal/auth"
 )
 
 //go:embed templates/*.html
@@ -18,6 +20,7 @@ type PageData struct {
 	AccountEmail string
 	Page        string
 	Error       string
+	Projects    []auth.ProjectCred
 }
 
 type Handler struct {
@@ -44,12 +47,14 @@ func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) BrowsePage(w http.ResponseWriter, r *http.Request) {
-	data := PageData{LoggedIn: true, Page: "browse"}
+	session := auth.GetSession(r)
+	data := PageData{LoggedIn: true, Page: "browse", Projects: session.Projects}
 	h.render(w, "layout.html", data)
 }
 
 func (h *Handler) QueryPage(w http.ResponseWriter, r *http.Request) {
-	data := PageData{LoggedIn: true, Page: "query"}
+	session := auth.GetSession(r)
+	data := PageData{LoggedIn: true, Page: "query", Projects: session.Projects}
 	h.render(w, "layout.html", data)
 }
 

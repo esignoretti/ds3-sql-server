@@ -13,6 +13,7 @@ import (
 func init() {
 	queryCmd.Flags().Bool("json", false, "Output as JSON")
 	queryCmd.Flags().StringP("file", "f", "", "Read SQL from file")
+	queryCmd.Flags().StringP("project", "p", "", "Project ID (defaults to first project)")
 	rootCmd.AddCommand(queryCmd)
 }
 
@@ -44,7 +45,12 @@ Examples:
 		}
 
 		body, _ := json.Marshal(map[string]string{"sql": sql})
-		data, err := authedPost(cfg, "/query", body)
+
+		path := "/query"
+		if p, _ := cmd.Flags().GetString("project"); p != "" {
+			path += "?project=" + p
+		}
+		data, err := authedPost(cfg, path, body)
 		if err != nil {
 			return err
 		}
