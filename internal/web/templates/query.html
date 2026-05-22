@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DS3 SQL — Query</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+    <header class="navbar">
+        <span class="brand">DS3 SQL</span>
+        <nav>
+            <a href="/browse">Browse</a>
+            <a href="/query">Query</a>
+            <a href="/auth/logout" class="text-muted">Logout</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <div class="query-layout">
+            <div class="editor-panel">
+                <h3>SQL Editor</h3>
+                <textarea id="sql-editor" rows="8" class="input code"
+                    placeholder="SELECT * FROM read_parquet('s3://bucket/prefix/*.parquet') LIMIT 10"></textarea>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                    <button class="btn btn-primary" onclick="runQuery()">▶ Run</button>
+                    <button class="btn" onclick="clearResults()">Clear</button>
+                </div>
+                <div class="text-muted" style="margin-top:4px;font-size:12px;">
+                    Ctrl+Enter to run
+                </div>
+            </div>
+            <div class="results-panel">
+                <h3>Results</h3>
+                <div id="query-status"></div>
+                <div id="query-results">
+                    <p class="text-muted">Run a query to see results</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function runQuery() {
+            const sql = document.getElementById('sql-editor').value;
+            if (!sql) return;
+
+            const status = document.getElementById('query-status');
+            const results = document.getElementById('query-results');
+            status.innerHTML = 'Running...';
+            results.innerHTML = '';
+
+            fetch('/query', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sql: sql})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    status.innerHTML = '<span class="error">Error: ' + data.error + '</span>';
+                    return;
+                }
+                status.innerHTML = '<span class="text-muted">' + data.row_count + ' rows in ' + data.elapsed_ms + 'ms</span>';
+
+                if (data.row_count === 0) {
+                    results.innerHTML = '<p class="text-muted">No rows returned</p>';
+                    return;
+                }
+
+                let html = '<table class="table"><thead><tr>';
+                data.columns.forEach(col => {
+                    html += '<th>' + col.name + '<br><small>' + col.type + '</small></th>';
+                });
+                html += '</tr></thead><tbody>';
+                data.rows.forEach(row => {
+                    html += '<tr>';
+                    row.forEach(cell => {
+                        html += '<td>' + (cell === null ? '<span class="null">NULL</span>' : escapeHtml(String(cell))) + '</td>';
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                results.innerHTML = html;
+            })
+            .catch(err => {
+                status.innerHTML = '<span class="error">Request failed: ' + err.message + '</span>';
+            });
+        }
+
+        function clearResults() {
+            document.getElementById('query-status').innerHTML = '';
+            document.getElementById('query-results').innerHTML = '<p class="text-muted">Run a query to see results</p>';
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                runQuery();
+            }
+        });
+    </script>
+</body>
+</html>

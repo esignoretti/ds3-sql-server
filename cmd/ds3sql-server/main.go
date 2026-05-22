@@ -18,6 +18,7 @@ import (
 	"github.com/esignoretti/ds3-sql-server/internal/config"
 	"github.com/esignoretti/ds3-sql-server/internal/query"
 	"github.com/esignoretti/ds3-sql-server/internal/s3"
+	"github.com/esignoretti/ds3-sql-server/internal/web"
 )
 
 func main() {
@@ -85,6 +86,26 @@ func main() {
 
 		r.Post("/query", queryHandler.Query)
 		r.Post("/schema", schemaHandler.InferSchema)
+	})
+
+	// Web UI
+	webHandler, err := web.NewHandler()
+	if err != nil {
+		log.Fatalf("failed to init web handler: %v", err)
+	}
+
+	// Public pages
+	r.Get("/login", webHandler.LoginPage)
+	r.Handle("/static/*", webHandler.Static())
+
+	// Protected pages
+	r.Group(func(r chi.Router) {
+		r.Use(auth.Middleware(sessionStore))
+		r.Get("/browse", webHandler.BrowsePage)
+		r.Get("/query", webHandler.QueryPage)
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/browse", http.StatusFound)
+		})
 	})
 
 	srv := &http.Server{

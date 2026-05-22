@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DS3 SQL — Browse</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+    <header class="navbar">
+        <span class="brand">DS3 SQL</span>
+        <nav>
+            <a href="/browse">Browse</a>
+            <a href="/query">Query</a>
+            <a href="/auth/logout" class="text-muted">Logout</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <div class="browse-layout">
+            <aside class="sidebar">
+                <h3>Buckets</h3>
+                <div id="bucket-list"
+                     hx-get="/buckets"
+                     hx-trigger="load"
+                     hx-swap="innerHTML">
+                    Loading...
+                </div>
+            </aside>
+            <main class="content">
+                <h3 id="current-path">Select a bucket or prefix</h3>
+                <div id="file-list"></div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        window.loadPrefix = function(bucket, prefix) {
+            const el = document.getElementById('file-list');
+            el.setAttribute('hx-get', '/buckets/' + encodeURIComponent(bucket) + '?prefix=' + encodeURIComponent(prefix));
+            el.setAttribute('hx-trigger', 'load');
+            el.innerHTML = 'Loading...';
+            htmx.process(el);
+            htmx.trigger(el, 'load');
+            document.getElementById('current-path').textContent = bucket + '/' + prefix;
+        };
+    </script>
+</body>
+</html>
