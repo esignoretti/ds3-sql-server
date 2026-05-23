@@ -14,6 +14,7 @@ func init() {
 	queryCmd.Flags().Bool("json", false, "Output as JSON")
 	queryCmd.Flags().StringP("file", "f", "", "Read SQL from file")
 	queryCmd.Flags().StringP("project", "p", "", "Project ID (defaults to first project)")
+	queryCmd.Flags().IntP("page-size", "n", 0, "Rows per page (0 = no pagination)")
 	rootCmd.AddCommand(queryCmd)
 }
 
@@ -83,34 +84,61 @@ Examples:
 			return nil
 		}
 
+		pageSize, _ := cmd.Flags().GetInt("page-size")
+		if pageSize == 0 {
+			fmt.Print("Rows per page (0 for all): ")
+			_, _ = fmt.Scanf("%d", &pageSize)
+		}
+
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 
 		headers := make([]string, len(result.Columns))
 		for i, c := range result.Columns {
 			headers[i] = c.Name
 		}
-		fmt.Fprintln(w, strings.Join(headers, "\t"))
 
 		seps := make([]string, len(result.Columns))
 		for i := range seps {
 			seps[i] = "---"
 		}
-		fmt.Fprintln(w, strings.Join(seps, "\t"))
 
-		for _, row := range result.Rows {
-			cells := make([]string, len(row))
-			for i, cell := range row {
-				if cell == nil {
-					cells[i] = "NULL"
-				} else {
-					cells[i] = fmt.Sprintf("%v", cell)
+		printPage := func(start, end int) {
+			fmt.Fprintln(w, strings.Join(headers, "\t"))
+			fmt.Fprintln(w, strings.Join(seps, "\t"))
+			for _, row := range result.Rows[start:end] {
+				cells := make([]string, len(row))
+				for i, cell := range row {
+					if cell == nil {
+						cells[i] = "NULL"
+					} else {
+						cells[i] = fmt.Sprintf("%v", cell)
+					}
 				}
+				fmt.Fprintln(w, strings.Join(cells, "\t"))
 			}
-			fmt.Fprintln(w, strings.Join(cells, "\t"))
+			w.Flush()
 		}
-		w.Flush()
 
-		fmt.Printf("\n(%d rows, %dms)\n", result.RowCount, result.ElapsedMs)
+		if pageSize <= 0 || pageSize >= len(result.Rows) {
+			printPage(0, len(result.Rows))
+			fmt.Printf("\n(%d rows, %dms)\n", result.RowCount, result.ElapsedMs)
+			return nil
+		}
+
+		for i := 0; i < len(result.Rows); i += pageSize {
+			end := i + pageSize
+			if end > len(result.Rows) {
+				end = len(result.Rows)
+			}
+			printPage(i, end)
+			fmt.Printf("\n-- Page %d/%d (%d rows, %dms) -- Press Enter for next page, q to quit: ",
+				i/pageSize+1, (len(result.Rows)+pageSize-1)/pageSize, result.RowCount, result.ElapsedMs)
+			var input string
+			_, _ = fmt.Scanln(&input)
+			if strings.EqualFold(input, "q") {
+				break
+			}
+		}
 		return nil
 	},
 }
