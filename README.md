@@ -11,6 +11,8 @@ A lightweight, stateless sidecar service that enables SQL querying of data store
 - **Cubbit IAM authentication** — challenge-response protocol with Ed25519 signatures; per-project S3 credentials are automatically provisioned via Cubbit Keyvault
 - **Schema inference** — discover column names and types of any S3 path before querying
 - **Bucket browsing** — list buckets and objects with prefix/delimiter navigation
+- **Paginated results** — both CLI and Web UI support configurable page sizes with next/prev navigation
+- **Connection pooling** — warm DuckDB pool eliminates per-query setup overhead (configurable pool size)
 
 ## Quick Start
 
@@ -77,12 +79,15 @@ query:
   max_rows: 10000
   max_execution_seconds: 60
   max_result_bytes: 104857600
+  pool_size: 4
+  threads: 0
+  memory_limit: "2GB"
 
 rate_limit:
   queries_per_minute: 10
 ```
 
-Environment variable overrides: `DS3SQL_LISTEN_ADDR`, `DS3SQL_IAM_URL`, `DS3SQL_DS3_GATEWAY_URL`.
+Environment variable overrides: `DS3SQL_LISTEN_ADDR`, `DS3SQL_IAM_URL`, `DS3SQL_DS3_GATEWAY_URL`, `DS3SQL_POOL_SIZE`, `DS3SQL_THREADS`, `DS3SQL_MEMORY_LIMIT`.
 
 ## Tech Stack
 
