@@ -35,11 +35,23 @@
           <button class="btn btn-secondary" onclick="clearQuery()">Clear</button>
         </div>
         <div id="query-status" style="font-size:0.85rem;"></div>
-        <div id="export-bar" style="display:none;gap:0.5rem;margin-bottom:0.5rem;">
+        <div id="export-bar" style="display:none;gap:0.5rem;margin-bottom:0.5rem;align-items:center;">
           <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="exportCSV()">⬇ CSV</button>
           <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="exportJSON()">⬇ JSON</button>
+          <span style="flex:1;"></span>
+          <label style="font-size:0.8rem;color:var(--text-muted);display:flex;align-items:center;gap:0.25rem;">
+            Page size:
+            <select id="page-size-select" onchange="renderPage()" style="background:var(--surface-2);color:var(--text);border:0.0625rem solid var(--border);border-radius:var(--radius);padding:0.2rem 0.4rem;font-size:0.8rem;">
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="250">250</option>
+              <option value="500">500</option>
+              <option value="0">All</option>
+            </select>
+          </label>
         </div>
         <div id="query-results" style="overflow-x:auto;"></div>
+        <div id="query-pagination" style="display:none;padding:0.5rem 0;text-align:center;"></div>
       </div>
     </div>
   </div>
@@ -65,6 +77,8 @@ var selPaths = [];
 var selBucket = '';
 var selProject = '';
 var lastResult = null;
+var currentPage = 0;
+var pageSize = 100;
 
 function switchProject(id) {
   if (!id) return;
@@ -172,6 +186,7 @@ function runQuery() {
   var results = document.getElementById('query-results');
   status.innerHTML = 'Running...';
   results.innerHTML = '';
+  document.getElementById('query-pagination').style.display = 'none';
   fetch('/query?project=' + encodeURIComponent(selProject), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -181,21 +196,56 @@ function runQuery() {
   .then(function(d) {
     if (d.error) { status.innerHTML = '<span class="error">' + d.error + '</span>'; document.getElementById('export-bar').style.display = 'none'; return; }
     lastResult = d;
+    currentPage = 0;
     status.innerHTML = d.row_count + ' rows in ' + d.elapsed_ms + 'ms';
     document.getElementById('export-bar').style.display = d.row_count ? 'flex' : 'none';
     if (!d.row_count) { results.innerHTML = '<p style="color:var(--text-muted);">No rows</p>'; return; }
-    var h = '<table><thead><tr>';
-    d.columns.forEach(function(c) { h += '<th>' + c.name + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + c.type + '</span></th>'; });
-    h += '</tr></thead><tbody>';
-    d.rows.forEach(function(r) {
-      h += '<tr>';
-      r.forEach(function(v) { h += '<td>' + (v === null ? '<span style="color:var(--text-muted);font-style:italic;">NULL</span>' : escHtml(String(v))) + '</td>'; });
-      h += '</tr>';
-    });
-    h += '</tbody></table>';
-    results.innerHTML = h;
+    renderPage();
   })
   .catch(function(e) { status.innerHTML = '<span class="error">Error: ' + e.message + '</span>'; });
+}
+
+function renderPage() {
+  var results = document.getElementById('query-results');
+  var d = lastResult;
+  if (!d) return;
+  var sel = document.getElementById('page-size-select');
+  pageSize = parseInt(sel.value);
+  var totalPages = pageSize > 0 ? Math.ceil(d.rows.length / pageSize) : 1;
+  if (currentPage >= totalPages) currentPage = 0;
+  var start = pageSize > 0 ? currentPage * pageSize : 0;
+  var end = pageSize > 0 ? Math.min(start + pageSize, d.rows.length) : d.rows.length;
+
+  var h = '<table><thead><tr>';
+  d.columns.forEach(function(c) { h += '<th>' + c.name + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + c.type + '</span></th>'; });
+  h += '</tr></thead><tbody>';
+  for (var i = start; i < end; i++) {
+    h += '<tr>';
+    d.rows[i].forEach(function(v) { h += '<td>' + (v === null ? '<span style="color:var(--text-muted);font-style:italic;">NULL</span>' : escHtml(String(v))) + '</td>'; });
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+  results.innerHTML = h;
+
+  var pag = document.getElementById('query-pagination');
+  if (pageSize > 0 && totalPages > 1) {
+    var p = '<span style="font-size:0.85rem;color:var(--text-muted);margin-right:1rem;">Page ' + (currentPage + 1) + '/' + totalPages + ' (' + d.row_count + ' rows)</span>';
+    p += '<button class="btn btn-secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem;margin-right:0.25rem;" onclick="prevPage()" ' + (currentPage === 0 ? 'disabled' : '') + '>← Prev</button>';
+    p += '<button class="btn btn-secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem;" onclick="nextPage()" ' + (currentPage >= totalPages - 1 ? 'disabled' : '') + '>Next →</button>';
+    pag.innerHTML = p;
+    pag.style.display = 'block';
+  } else {
+    pag.style.display = 'none';
+  }
+}
+
+function prevPage() {
+  if (currentPage > 0) { currentPage--; renderPage(); }
+}
+
+function nextPage() {
+  var totalPages = pageSize > 0 ? Math.ceil(lastResult.rows.length / pageSize) : 1;
+  if (currentPage < totalPages - 1) { currentPage++; renderPage(); }
 }
 
 function clearQuery() {
