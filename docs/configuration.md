@@ -17,6 +17,9 @@ query:
   max_rows: 10000
   max_execution_seconds: 60
   max_result_bytes: 104857600
+  pool_size: 4
+  threads: 0
+  memory_limit: "2GB"
 
 rate_limit:
   queries_per_minute: 10
@@ -31,6 +34,9 @@ All config fields can be overridden via environment variables:
 | `DS3SQL_LISTEN_ADDR` | `listen_addr` | `:8080` |
 | `DS3SQL_IAM_URL` | `iam_url` | `https://api.eu00wi.cubbit.services` |
 | `DS3SQL_DS3_GATEWAY_URL` | `ds3_gateway_url` | `http://localhost:9000` |
+| `DS3SQL_POOL_SIZE` | `query.pool_size` | `4` |
+| `DS3SQL_THREADS` | `query.threads` | `0` (auto) |
+| `DS3SQL_MEMORY_LIMIT` | `query.memory_limit` | `2GB` |
 
 ## CLI Configuration
 
