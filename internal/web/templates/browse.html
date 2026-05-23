@@ -41,14 +41,8 @@
         </div>
         <div id="page-controls" style="display:none;gap:0.5rem;margin-bottom:0.5rem;align-items:center;flex-wrap:wrap;">
           <label style="font-size:0.8rem;color:var(--text-muted);display:flex;align-items:center;gap:0.25rem;">
-            Page size:
-            <select id="page-size-select" onchange="renderPage()" style="background:var(--surface-2);color:var(--text);border:0.0625rem solid var(--border);border-radius:var(--radius);padding:0.2rem 0.4rem;font-size:0.8rem;">
-              <option value="50">50</option>
-              <option value="100" selected>100</option>
-              <option value="250">250</option>
-              <option value="500">500</option>
-              <option value="0">All</option>
-            </select>
+            Rows per page:
+            <input type="number" id="page-size-input" value="100" min="1" max="100000" onchange="renderPage()" style="width:80px;background:var(--surface-2);color:var(--text);border:0.0625rem solid var(--border);border-radius:var(--radius);padding:0.2rem 0.4rem;font-size:0.8rem;">
           </label>
           <span id="page-info" style="font-size:0.85rem;color:var(--text-muted);"></span>
           <button id="prev-page-btn" class="btn btn-secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem;" onclick="prevPage()">← Prev</button>
@@ -81,7 +75,6 @@ var selBucket = '';
 var selProject = '';
 var lastResult = null;
 var currentPage = 0;
-var pageSize = 100;
 
 function switchProject(id) {
   if (!id) return;
@@ -213,12 +206,14 @@ function renderPage() {
   var results = document.getElementById('query-results');
   var d = lastResult;
   if (!d) return;
-  var sel = document.getElementById('page-size-select');
-  pageSize = parseInt(sel.value);
-  var totalPages = pageSize > 0 ? Math.ceil(d.rows.length / pageSize) : 1;
-  if (currentPage >= totalPages) currentPage = 0;
-  var start = pageSize > 0 ? currentPage * pageSize : 0;
-  var end = pageSize > 0 ? Math.min(start + pageSize, d.rows.length) : d.rows.length;
+  var input = document.getElementById('page-size-input');
+  var pageSize = parseInt(input.value);
+  if (!pageSize || pageSize < 1) pageSize = d.rows.length;
+  var totalPages = Math.ceil(d.rows.length / pageSize);
+  if (totalPages < 1) totalPages = 1;
+  if (currentPage >= totalPages) currentPage = totalPages - 1;
+  var start = currentPage * pageSize;
+  var end = Math.min(start + pageSize, d.rows.length);
 
   var h = '<table><thead><tr>';
   d.columns.forEach(function(c) { h += '<th>' + c.name + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + c.type + '</span></th>'; });
@@ -235,14 +230,10 @@ function renderPage() {
   var info = document.getElementById('page-info');
   var prevBtn = document.getElementById('prev-page-btn');
   var nextBtn = document.getElementById('next-page-btn');
-  if (pageSize > 0 && totalPages > 1) {
-    info.textContent = 'Page ' + (currentPage + 1) + '/' + totalPages + ' (' + d.row_count + ' rows)';
-    prevBtn.disabled = currentPage === 0;
-    nextBtn.disabled = currentPage >= totalPages - 1;
-    ctrl.style.display = 'flex';
-  } else {
-    ctrl.style.display = 'none';
-  }
+  info.textContent = 'Page ' + (currentPage + 1) + '/' + totalPages + ' (' + d.row_count + ' rows)';
+  prevBtn.disabled = totalPages <= 1 || currentPage === 0;
+  nextBtn.disabled = totalPages <= 1 || currentPage >= totalPages - 1;
+  ctrl.style.display = 'flex';
 }
 
 function prevPage() {
@@ -259,6 +250,7 @@ function clearQuery() {
   document.getElementById('query-status').innerHTML = '';
   document.getElementById('query-results').innerHTML = '';
   document.getElementById('export-bar').style.display = 'none';
+  document.getElementById('page-controls').style.display = 'none';
   lastResult = null;
 }
 
