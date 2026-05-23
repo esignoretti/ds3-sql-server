@@ -3,7 +3,6 @@ package query
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -81,32 +80,16 @@ func (e *Engine) Query(sqlStr string, accessKey, secretKey, rawEndpoint string) 
 		endpoint = endpoint[idx+3:]
 	}
 
-	db, err := sql.Open("duckdb", "")
-	if err != nil {
-		return errorResult("open duckdb: "+err.Error(), start)
-	}
-	defer db.Close()
-
-	exts := []string{"httpfs", "parquet"}
-	for _, ext := range exts {
-		if _, err := db.Exec(fmt.Sprintf("LOAD %s", ext)); err != nil {
-			db.Exec(fmt.Sprintf("INSTALL %s", ext))
-			if _, err2 := db.Exec(fmt.Sprintf("LOAD %s", ext)); err2 != nil {
-				return errorResult(fmt.Sprintf("load extension %s: %v", ext, err2), start)
-			}
-		}
-	}
+	db := <-e.pool
+	defer func() { e.pool <- db }()
 
 	useSSLStr := "false"
 	if useSSL {
 		useSSLStr = "true"
 	}
 
-	log.Printf("DuckDB S3 config: endpoint=%s use_ssl=%s raw=%s", endpoint, useSSLStr, rawEndpoint)
-
-	// Try CREATE SECRET (DuckDB >= 0.10); fallback to SET vars
+	// Set S3 credentials
 	db.Exec("CREATE SECRET ds3_s3 (TYPE S3, KEY_ID '" + accessKey + "', SECRET '" + secretKey + "', ENDPOINT '" + endpoint + "', REGION 'us-east-1', USE_SSL " + useSSLStr + ", URL_STYLE 'path')")
-	// DuckDB >= 0.8 fallback
 	db.Exec("SET s3_access_key_id='" + accessKey + "'")
 	db.Exec("SET s3_secret_access_key='" + secretKey + "'")
 	db.Exec("SET s3_endpoint='" + endpoint + "'")
@@ -118,8 +101,17 @@ func (e *Engine) Query(sqlStr string, accessKey, secretKey, rawEndpoint string) 
 		db.Exec("SET s3_use_ssl=false")
 	}
 
-	if _, err := db.Exec("SET memory_limit='512MB'; SET threads=2;"); err != nil {
-		return errorResult("set config: "+err.Error(), start)
+	// Set memory limit
+	memSQL := "SET memory_limit='" + e.memoryLimit + "'"
+	if _, err := db.Exec(memSQL); err != nil {
+		return errorResult("set memory_limit: "+err.Error(), start)
+	}
+
+	// Set threads (skip if 0 = DuckDB auto-detect)
+	if e.threads > 0 {
+		if _, err := db.Exec(fmt.Sprintf("SET threads=%d", e.threads)); err != nil {
+			return errorResult("set threads: "+err.Error(), start)
+		}
 	}
 
 	rows, err := db.Query(sqlStr)
@@ -188,6 +180,10 @@ func (e *Engine) Query(sqlStr string, accessKey, secretKey, rawEndpoint string) 
 		RowCount:  rowCount,
 		ElapsedMs: elapsed,
 	}
+}
+
+func (e *Engine) PoolLen() int {
+	return len(e.pool)
 }
 
 func errorResult(msg string, start time.Time) *Result {
