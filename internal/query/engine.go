@@ -24,17 +24,50 @@ type Result struct {
 }
 
 type Engine struct {
+	pool             chan *sql.DB
 	maxRows          int
 	maxExecutionSecs int
 	maxResultBytes   int64
+	memoryLimit      string
+	threads          int
 }
 
-func NewEngine(maxRows int, maxExecutionSecs int, maxResultBytes int64) *Engine {
+func NewEngine(maxRows, maxExecutionSecs int, maxResultBytes int64, poolSize, threads int, memoryLimit string) (*Engine, error) {
+	if poolSize < 1 {
+		poolSize = 1
+	}
+	if memoryLimit == "" {
+		memoryLimit = "2GB"
+	}
+
+	pool := make(chan *sql.DB, poolSize)
+	for i := 0; i < poolSize; i++ {
+		db, err := sql.Open("duckdb", "")
+		if err != nil {
+			drainPool(pool)
+			return nil, fmt.Errorf("open duckdb connection %d: %w", i, err)
+		}
+		if _, err := db.Exec("LOAD httpfs"); err != nil {
+			db.Close()
+			drainPool(pool)
+			return nil, fmt.Errorf("load httpfs on connection %d: %w", i, err)
+		}
+		if _, err := db.Exec("LOAD parquet"); err != nil {
+			db.Close()
+			drainPool(pool)
+			return nil, fmt.Errorf("load parquet on connection %d: %w", i, err)
+		}
+		pool <- db
+	}
+
 	return &Engine{
+		pool:             pool,
 		maxRows:          maxRows,
 		maxExecutionSecs: maxExecutionSecs,
 		maxResultBytes:   maxResultBytes,
-	}
+		memoryLimit:      memoryLimit,
+		threads:          threads,
+	}, nil
 }
 
 func (e *Engine) Query(sqlStr string, accessKey, secretKey, rawEndpoint string) *Result {
@@ -161,5 +194,16 @@ func errorResult(msg string, start time.Time) *Result {
 	return &Result{
 		Error:     msg,
 		ElapsedMs: time.Since(start).Milliseconds(),
+	}
+}
+
+func drainPool(pool chan *sql.DB) {
+	for {
+		select {
+		case db := <-pool:
+			db.Close()
+		default:
+			return
+		}
 	}
 }

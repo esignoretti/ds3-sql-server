@@ -5,7 +5,10 @@ import (
 )
 
 func TestErrorOnInvalidSQL(t *testing.T) {
-	engine := NewEngine(100, 10, 1024*1024)
+	engine, err := NewEngine(100, 10, 1024*1024, 1, 0, "128MB")
+	if err != nil {
+		t.Fatal(err)
+	}
 	result := engine.Query("SELECT BADSYNTAX", "", "", "")
 	if result.Error == "" {
 		t.Fatal("expected error for invalid SQL")
@@ -14,7 +17,10 @@ func TestErrorOnInvalidSQL(t *testing.T) {
 }
 
 func TestTrimToMaxRows(t *testing.T) {
-	engine := NewEngine(5, 10, 1024*1024)
+	engine, err := NewEngine(5, 10, 1024*1024, 1, 0, "128MB")
+	if err != nil {
+		t.Fatal(err)
+	}
 	result := engine.Query("SELECT * FROM range(100)", "", "", "")
 	if result.Error != "" {
 		t.Fatalf("unexpected error: %s", result.Error)
