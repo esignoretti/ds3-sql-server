@@ -241,7 +241,9 @@ function prevPage() {
 }
 
 function nextPage() {
-  var totalPages = pageSize > 0 ? Math.ceil(lastResult.rows.length / pageSize) : 1;
+  var ps = parseInt(document.getElementById('page-size-input').value);
+  if (!ps || ps < 1) ps = lastResult.rows.length;
+  var totalPages = Math.ceil(lastResult.rows.length / ps);
   if (currentPage < totalPages - 1) { currentPage++; renderPage(); }
 }
 
