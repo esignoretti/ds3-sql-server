@@ -39,7 +39,7 @@ func (e *Engine) InferSchema(path, accessKey, secretKey, rawEndpoint string) *Sc
 	}
 
 	// Set S3 credentials
-	db.Exec("CREATE SECRET ds3_s3 (TYPE S3, KEY_ID '" + accessKey + "', SECRET '" + secretKey + "', ENDPOINT '" + endpoint + "', REGION 'us-east-1', USE_SSL " + useSSLStr + ", URL_STYLE 'path')")
+	db.Exec("CREATE OR REPLACE SECRET ds3_s3 (TYPE S3, KEY_ID '" + accessKey + "', SECRET '" + secretKey + "', ENDPOINT '" + endpoint + "', REGION 'us-east-1', USE_SSL " + useSSLStr + ", URL_STYLE 'path')")
 	db.Exec("SET s3_access_key_id='" + accessKey + "'")
 	db.Exec("SET s3_secret_access_key='" + secretKey + "'")
 	db.Exec("SET s3_endpoint='" + endpoint + "'")
