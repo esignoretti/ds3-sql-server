@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -24,9 +25,12 @@ type AuthConfig struct {
 }
 
 type QueryConfig struct {
-	MaxRows          int   `yaml:"max_rows"`
-	MaxExecutionSecs int   `yaml:"max_execution_seconds"`
-	MaxResultBytes   int64 `yaml:"max_result_bytes"`
+	MaxRows          int    `yaml:"max_rows"`
+	MaxExecutionSecs int    `yaml:"max_execution_seconds"`
+	MaxResultBytes   int64  `yaml:"max_result_bytes"`
+	PoolSize         int    `yaml:"pool_size"`
+	Threads          int    `yaml:"threads"`
+	MemoryLimit      string `yaml:"memory_limit"`
 }
 
 type RateLimitConfig struct {
@@ -46,6 +50,9 @@ func Default() *Config {
 			MaxRows:          10000,
 			MaxExecutionSecs: 60,
 			MaxResultBytes:   104857600,
+			PoolSize:         4,
+			Threads:          0,
+			MemoryLimit:      "2GB",
 		},
 		RateLimit: RateLimitConfig{
 			QueriesPerMinute: 10,
@@ -88,6 +95,19 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("DS3SQL_DS3_GATEWAY_URL"); v != "" {
 		cfg.DS3GatewayURL = v
+	}
+	if v := os.Getenv("DS3SQL_POOL_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Query.PoolSize = n
+		}
+	}
+	if v := os.Getenv("DS3SQL_THREADS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Query.Threads = n
+		}
+	}
+	if v := os.Getenv("DS3SQL_MEMORY_LIMIT"); v != "" {
+		cfg.Query.MemoryLimit = v
 	}
 
 	return cfg, nil
