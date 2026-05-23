@@ -58,17 +58,29 @@ func main() {
 	r.Get("/auth/logout", authHandler.Logout)
 
 	// Query engine
-	queryEngine := query.NewEngine(
+	queryEngine, err := query.NewEngine(
 		cfg.Query.MaxRows,
 		cfg.Query.MaxExecutionSecs,
 		cfg.Query.MaxResultBytes,
+		cfg.Query.PoolSize,
+		cfg.Query.Threads,
+		cfg.Query.MemoryLimit,
 	)
+	if err != nil {
+		log.Fatalf("failed to init query engine: %v", err)
+	}
 	queryHandler := api.NewQueryHandler(queryEngine)
 	schemaHandler := api.NewSchemaHandler(queryEngine)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok"}`))
+		poolLen := queryEngine.PoolLen()
+		if poolLen > 0 {
+			w.Write([]byte(`{"status":"ok","pool_size":` + strconv.Itoa(poolLen) + `}`))
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"status":"degraded","error":"query pool empty"}`))
+		}
 	})
 
 	// Protected group
