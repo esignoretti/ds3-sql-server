@@ -37,3 +37,11 @@ func NewClient(ctx context.Context, accessKey, secretKey, endpoint string) (*Cli
 
 	return &Client{client: client, endpoint: s3Endpoint}, nil
 }
+
+func (c *Client) DeleteObject(ctx context.Context, bucket, key string) error {
+	_, err := c.client.DeleteObject(ctx, &awss3.DeleteObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	return err
+}
