@@ -198,23 +198,15 @@ func (e *Engine) convertFile(file, bucket, endpoint, accessKey, secretKey string
 	switch f {
 	case "syslog":
 		readSQL = fmt.Sprintf(`
-			SELECT
-				columns[1] AS month,
-				columns[2] AS day,
-				columns[3] AS time,
-				columns[4] AS host,
-				columns[5] AS app_pid,
-				regexp_extract(columns[5], '^([^\\[]+)', 1) AS app,
-				regexp_extract(columns[5], '\\[([^\\]]+)\\]', 1) AS pid,
-				columns[array_length(columns)] AS message
-			FROM read_csv('%s', AUTO_DETECT=FALSE, DELIM=' ', QUOTE='"', HEADER=FALSE)
+			SELECT *
+			FROM read_csv('%s', AUTO_DETECT=TRUE, DELIM=' ', QUOTE='"', HEADER=FALSE)
 		`, s3Path)
 	case "json":
 		readSQL = fmt.Sprintf("SELECT * FROM read_json_auto('%s')", s3Path)
 	case "log":
 		readSQL = fmt.Sprintf(`
 			SELECT *
-			FROM read_csv('%s', AUTO_DETECT=FALSE, DELIM=' ', QUOTE='"', HEADER=FALSE)
+			FROM read_csv('%s', AUTO_DETECT=TRUE, DELIM=' ', QUOTE='"', HEADER=FALSE)
 		`, s3Path)
 	default:
 		readSQL = fmt.Sprintf("SELECT * FROM read_csv_auto('%s', HEADER=FALSE)", s3Path)
