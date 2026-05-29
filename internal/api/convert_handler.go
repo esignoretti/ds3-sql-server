@@ -18,6 +18,7 @@ func NewConvertHandler(engine *convert.Engine) *ConvertHandler {
 }
 
 func (h *ConvertHandler) Start(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10MB limit
 	var req struct {
 		Bucket         string   `json:"bucket"`
 		Files          []string `json:"files"`
@@ -73,12 +74,13 @@ func (h *ConvertHandler) Status(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"job not found"}`, http.StatusNotFound)
 		return
 	}
+	snap := job.Snapshot()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"job_id":    job.ID,
-		"total":     job.Total,
-		"completed": job.Completed,
-		"status":    job.Status,
-		"results":   job.Results,
+		"job_id":    snap.ID,
+		"total":     snap.Total,
+		"completed": snap.Completed,
+		"status":    snap.Status,
+		"results":   snap.Results,
 	})
 }

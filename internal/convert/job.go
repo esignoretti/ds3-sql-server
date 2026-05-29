@@ -24,6 +24,22 @@ type Job struct {
 	CreatedAt time.Time    `json:"created_at"`
 }
 
+func (j *Job) Snapshot() *Job {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	snap := &Job{
+		ID:        j.ID,
+		Bucket:    j.Bucket,
+		Total:     j.Total,
+		Completed: j.Completed,
+		Status:    j.Status,
+		Results:   make([]FileResult, len(j.Results)),
+		CreatedAt: j.CreatedAt,
+	}
+	copy(snap.Results, j.Results)
+	return snap
+}
+
 type JobStore struct {
 	mu   sync.RWMutex
 	jobs map[string]*Job

@@ -28,8 +28,12 @@ type Engine struct {
 }
 
 func NewEngine(pool chan *sql.DB, workers int) *Engine {
+	poolSize := cap(pool)
 	if workers < 1 {
 		workers = 1
+	}
+	if workers > poolSize {
+		workers = poolSize
 	}
 	return &Engine{
 		pool:    pool,
@@ -87,12 +91,13 @@ func (e *Engine) Start(req ConvertRequest) (*Job, error) {
 	}
 	e.jobs.Set(jobID, job)
 
-	go e.run(job, req)
+	ctx := context.Background()
+	go e.run(ctx, job, req)
 
 	return job, nil
 }
 
-func (e *Engine) run(job *Job, req ConvertRequest) {
+func (e *Engine) run(ctx context.Context, job *Job, req ConvertRequest) {
 	files := make(chan int, len(req.Files))
 	for i := range req.Files {
 		files <- i
@@ -102,7 +107,7 @@ func (e *Engine) run(job *Job, req ConvertRequest) {
 	var wg sync.WaitGroup
 	for w := 0; w < e.workers; w++ {
 		wg.Add(1)
-		go e.worker(&wg, job, req, files)
+		go e.worker(ctx, &wg, job, req, files)
 	}
 	wg.Wait()
 
@@ -128,7 +133,7 @@ func (e *Engine) run(job *Job, req ConvertRequest) {
 	job.mu.Unlock()
 }
 
-func (e *Engine) worker(wg *sync.WaitGroup, job *Job, req ConvertRequest, files chan int) {
+func (e *Engine) worker(ctx context.Context, wg *sync.WaitGroup, job *Job, req ConvertRequest, files chan int) {
 	defer wg.Done()
 
 	for idx := range files {
@@ -153,7 +158,7 @@ func (e *Engine) worker(wg *sync.WaitGroup, job *Job, req ConvertRequest, files 
 			job.Completed++
 
 			if req.DeleteOriginal {
-				delErr := e.deleteOriginal(req.Bucket, file, req.Endpoint, req.AccessKey, req.SecretKey)
+				delErr := e.deleteOriginal(ctx, req.Bucket, file, req.Endpoint, req.AccessKey, req.SecretKey)
 				if delErr != nil {
 					job.Results[idx].Error = "converted but delete failed: " + delErr.Error()
 				}
@@ -178,7 +183,10 @@ func (e *Engine) convertFile(file, bucket, endpoint, accessKey, secretKey string
 		useSSLStr = "true"
 	}
 
-	db.Exec("CREATE OR REPLACE SECRET ds3_s3 (TYPE S3, KEY_ID '" + accessKey + "', SECRET '" + secretKey + "', ENDPOINT '" + rawEndpoint + "', REGION 'us-east-1', USE_SSL " + useSSLStr + ", URL_STYLE 'path')")
+	secretSQL := "CREATE OR REPLACE SECRET ds3_s3 (TYPE S3, KEY_ID '" + accessKey + "', SECRET '" + secretKey + "', ENDPOINT '" + rawEndpoint + "', REGION 'us-east-1', USE_SSL " + useSSLStr + ", URL_STYLE 'path')"
+	if _, err := db.Exec(secretSQL); err != nil {
+		return fmt.Errorf("set s3 credentials: %w", err)
+	}
 
 	s3Path := "s3://" + bucket + "/" + file
 	outputPath := "s3://" + bucket + "/" + file + ".parquet"
@@ -209,8 +217,7 @@ func (e *Engine) convertFile(file, bucket, endpoint, accessKey, secretKey string
 	return nil
 }
 
-func (e *Engine) deleteOriginal(bucket, file, endpoint, accessKey, secretKey string) error {
-	ctx := context.Background()
+func (e *Engine) deleteOriginal(ctx context.Context, bucket, file, endpoint, accessKey, secretKey string) error {
 	client, err := s3.NewClient(ctx, accessKey, secretKey, endpoint)
 	if err != nil {
 		return fmt.Errorf("create s3 client: %w", err)
