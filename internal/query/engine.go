@@ -186,6 +186,10 @@ func (e *Engine) PoolLen() int {
 	return len(e.pool)
 }
 
+func (e *Engine) Pool() chan *sql.DB {
+	return e.pool
+}
+
 func errorResult(msg string, start time.Time) *Result {
 	return &Result{
 		Error:     msg,

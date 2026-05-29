@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DS3 SQL</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <link rel="stylesheet" href="/static/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,6 +21,7 @@
             </div>
             <ul class="sidebar-nav">
                 <li><a href="/browse" class="{{if eq .Page "browse"}}active{{end}}">Console</a></li>
+                <li><a href="/reports" class="{{if eq .Page "reports"}}active{{end}}">Reports</a></li>
             </ul>
             <div class="sidebar-footer">
                 <form action="/auth/logout" method="GET" style="display:inline;">
@@ -30,6 +32,8 @@
         <main class="main-content">
             {{if eq .Page "browse"}}{{template "browse" .}}
             {{else if eq .Page "query"}}{{template "query" .}}
+            {{else if eq .Page "report"}}{{template "report" .}}
+            {{else if eq .Page "reports"}}{{template "reports_list" .}}
             {{else}}{{template "browse" .}}{{end}}
         </main>
         {{else}}

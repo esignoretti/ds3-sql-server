@@ -1,0 +1,37 @@
+{{define "report"}}
+<div class="single-page">
+  <div id="report-app">
+    <div style="text-align:center;padding:4rem 0;">
+      <p style="color:var(--text-muted);">Loading report...</p>
+    </div>
+  </div>
+</div>
+
+<script src="/static/report.js"></script>
+<script>
+var reportId = new URLSearchParams(window.location.search).get('id');
+
+if (reportId) {
+  fetch('/api/reports/' + encodeURIComponent(reportId))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      reportState.title = d.title || 'Untitled Report';
+      reportState.columns = d.query_columns || [];
+      reportState.rows = d.query_rows || [];
+      reportState.sql = d.sql || '';
+      reportState.charts = d.charts || [];
+      initReport(d.analysis, d);
+    })
+    .catch(function(e) { document.getElementById('report-app').innerHTML = '<p style="color:var(--red);">Error: ' + e.message + '</p>'; });
+} else {
+  var analysisData = JSON.parse(sessionStorage.getItem('ds3sql_last_analysis') || 'null');
+  var queryData = JSON.parse(sessionStorage.getItem('ds3sql_last_query') || 'null');
+  if (!analysisData) {
+    document.getElementById('report-app').innerHTML = '<p style="color:var(--text-muted);">No analysis data. Run a query and click Analyze.</p>';
+  } else {
+    reportState.sql = queryData ? queryData.sql : '';
+    initReport(analysisData, queryData);
+  }
+}
+</script>
+{{end}}

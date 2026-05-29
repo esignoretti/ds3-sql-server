@@ -47,6 +47,7 @@
           <span id="page-info" style="font-size:0.85rem;color:var(--text-muted);"></span>
           <button id="prev-page-btn" class="btn btn-secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem;" onclick="prevPage()">← Prev</button>
           <button id="next-page-btn" class="btn btn-secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem;" onclick="nextPage()">Next →</button>
+          <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="analyzeResults()">📊 Analyze</button>
         </div>
         <div id="query-results" style="overflow-x:auto;"></div>
       </div>
@@ -254,6 +255,32 @@ function clearQuery() {
   document.getElementById('export-bar').style.display = 'none';
   document.getElementById('page-controls').style.display = 'none';
   lastResult = null;
+}
+
+function analyzeResults() {
+  if (!lastResult) { alert('Run a query first'); return; }
+  var status = document.getElementById('query-status');
+  status.innerHTML = 'Analyzing...';
+  fetch('/analyze', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      columns: lastResult.columns,
+      rows: lastResult.rows
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) { status.innerHTML = '<span class="error">' + d.error + '</span>'; return; }
+    sessionStorage.setItem('ds3sql_last_analysis', JSON.stringify(d));
+    sessionStorage.setItem('ds3sql_last_query', JSON.stringify({
+      sql: document.getElementById('sql-editor').value,
+      columns: lastResult.columns,
+      rows: lastResult.rows
+    }));
+    window.location.href = '/report';
+  })
+  .catch(function(e) { status.innerHTML = '<span class="error">Error: ' + e.message + '</span>'; });
 }
 
 function exportCSV() {

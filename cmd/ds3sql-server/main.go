@@ -16,10 +16,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/esignoretti/ds3-sql-server/internal/auth"
+	"github.com/esignoretti/ds3-sql-server/internal/analysis"
 	"github.com/esignoretti/ds3-sql-server/internal/api"
+	"github.com/esignoretti/ds3-sql-server/internal/auth"
 	"github.com/esignoretti/ds3-sql-server/internal/config"
 	"github.com/esignoretti/ds3-sql-server/internal/query"
+	"github.com/esignoretti/ds3-sql-server/internal/report"
 	"github.com/esignoretti/ds3-sql-server/internal/s3"
 	"github.com/esignoretti/ds3-sql-server/internal/web"
 )
@@ -71,6 +73,22 @@ func main() {
 	}
 	queryHandler := api.NewQueryHandler(queryEngine)
 	schemaHandler := api.NewSchemaHandler(queryEngine)
+
+	// Analysis engine
+	analysisEngine := analysis.NewEngine(queryEngine.Pool())
+	analysisHandler := api.NewAnalysisHandler(analysisEngine)
+
+	// Report store
+	reportDir := os.Getenv("DS3SQL_REPORT_DIR")
+	if reportDir == "" {
+		home, _ := os.UserHomeDir()
+		reportDir = home + "/.ds3sql/reports"
+	}
+	reportStore, err := report.NewDiskStore(reportDir)
+	if err != nil {
+		log.Fatalf("failed to init report store: %v", err)
+	}
+	reportHandler := api.NewReportHandler(reportStore)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -144,6 +162,12 @@ func main() {
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
+
+		r.Post("/analyze", analysisHandler.Analyze)
+		r.Get("/api/reports", reportHandler.List)
+		r.Post("/api/reports", reportHandler.Save)
+		r.Get("/api/reports/{id}", reportHandler.Get)
+		r.Delete("/api/reports/{id}", reportHandler.Delete)
 	})
 
 	// Web UI
@@ -164,6 +188,8 @@ func main() {
 		r.Use(auth.Middleware(sessionStore))
 		r.Get("/browse", webHandler.BrowsePage)
 		r.Get("/query", webHandler.QueryPage)
+		r.Get("/report", webHandler.ReportPage)
+		r.Get("/reports", webHandler.ReportsPage)
 	})
 
 	srv := &http.Server{

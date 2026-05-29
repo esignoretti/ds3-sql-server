@@ -58,6 +58,18 @@ func (h *Handler) QueryPage(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "layout.html", data)
 }
 
+func (h *Handler) ReportPage(w http.ResponseWriter, r *http.Request) {
+	session := auth.GetSession(r)
+	data := PageData{LoggedIn: true, Page: "report", Projects: session.Projects}
+	h.render(w, "layout.html", data)
+}
+
+func (h *Handler) ReportsPage(w http.ResponseWriter, r *http.Request) {
+	session := auth.GetSession(r)
+	data := PageData{LoggedIn: true, Page: "reports", Projects: session.Projects}
+	h.render(w, "layout.html", data)
+}
+
 func (h *Handler) render(w http.ResponseWriter, tmpl string, data interface{}) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.templates.ExecuteTemplate(w, tmpl, data); err != nil {

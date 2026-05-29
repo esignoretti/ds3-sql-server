@@ -1,0 +1,35 @@
+{{define "reports_list"}}
+<div class="single-page">
+  <h2 style="margin-bottom:1rem;">Saved Reports</h2>
+  <div id="report-list">
+    <p style="color:var(--text-muted);">Loading...</p>
+  </div>
+</div>
+
+<script>
+fetch('/api/reports')
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    var html = '';
+    if (!d.reports || !d.reports.length) {
+      html = '<p style="color:var(--text-muted);">No saved reports. Run a query and analyze it to create one.</p>';
+    } else {
+      html = '<table><thead><tr><th>Title</th><th>Created</th><th>Rows</th><th></th></tr></thead><tbody>';
+      d.reports.forEach(function(r) {
+        html += '<tr><td><a href="/report?id=' + encodeURIComponent(r.id) + '">' + escHtml(r.title) + '</a></td><td>' + new Date(r.created_at).toLocaleString() + '</td><td>' + r.row_count + '</td>';
+        html += '<td><button class="btn btn-secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem;" onclick="deleteReport(\'' + r.id + '\',this)">Delete</button></td></tr>';
+      });
+      html += '</tbody></table>';
+    }
+    document.getElementById('report-list').innerHTML = html;
+  })
+  .catch(function(e) { document.getElementById('report-list').innerHTML = '<p style="color:var(--red);">Error: ' + e.message + '</p>'; });
+
+function deleteReport(id, btn) {
+  if (!confirm('Delete this report?')) return;
+  fetch('/api/reports/' + encodeURIComponent(id), {method: 'DELETE'})
+    .then(function() { btn.closest('tr').remove(); })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+</script>
+{{end}}
