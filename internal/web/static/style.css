@@ -325,3 +325,6 @@ tbody tr:hover {
   .report-canvas { margin:0; }
   .chart-card { break-inside:avoid; }
 }
+
+.convert-item:hover { background:var(--surface-2); border-radius:var(--radius); }
+.convert-progress { margin-top:1rem; }

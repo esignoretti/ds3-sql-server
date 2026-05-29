@@ -20,6 +20,7 @@ import (
 	"github.com/esignoretti/ds3-sql-server/internal/api"
 	"github.com/esignoretti/ds3-sql-server/internal/auth"
 	"github.com/esignoretti/ds3-sql-server/internal/config"
+	"github.com/esignoretti/ds3-sql-server/internal/convert"
 	"github.com/esignoretti/ds3-sql-server/internal/query"
 	"github.com/esignoretti/ds3-sql-server/internal/report"
 	"github.com/esignoretti/ds3-sql-server/internal/s3"
@@ -88,6 +89,23 @@ func main() {
 		log.Fatalf("failed to init report store: %v", err)
 	}
 	reportHandler := api.NewReportHandler(reportStore)
+
+	// Conversion engine
+	workers := 4
+	if cfg.Query.PoolSize < workers {
+		workers = cfg.Query.PoolSize
+	}
+	convertEngine := convert.NewEngine(queryEngine.Pool(), workers)
+	convertHandler := api.NewConvertHandler(convertEngine)
+
+	// Periodic job store cleanup (runs until process exits)
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			convertEngine.JobStore().Cleanup(30 * time.Minute)
+		}
+	}()
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -172,6 +190,8 @@ func main() {
 		r.Post("/api/reports", reportHandler.Save)
 		r.Get("/api/reports/{id}", reportHandler.Get)
 		r.Delete("/api/reports/{id}", reportHandler.Delete)
+		r.Post("/convert", convertHandler.Start)
+		r.Get("/convert/status/{id}", convertHandler.Status)
 	})
 
 	// Web UI
