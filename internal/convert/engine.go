@@ -197,7 +197,7 @@ func (e *Engine) convertFile(file, bucket, endpoint, accessKey, secretKey string
 	var readSQL string
 	switch f {
 	case "syslog", "log":
-		readSQL = fmt.Sprintf(`SELECT * FROM read_csv('%s', DELIM=' ', HEADER=FALSE, all_varchar=true)`, s3Path)
+		readSQL = fmt.Sprintf(`SELECT * FROM read_csv('%s', DELIM=' ', QUOTE='\"', HEADER=FALSE, all_varchar=true, ignore_errors=true, null_padding=true)`, s3Path)
 	case "json":
 		readSQL = fmt.Sprintf("SELECT * FROM read_json_auto('%s')", s3Path)
 	default:
