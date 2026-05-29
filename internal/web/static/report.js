@@ -224,11 +224,10 @@ function removeChart(id) {
 }
 
 function saveReport() {
-  var queryData = JSON.parse(sessionStorage.getItem('ds3sql_last_query') || '{}');
   var body = {
     title: reportState.title,
-    sql: queryData.sql || '',
-    project_id: '',
+    sql: reportState.sql,
+    project_id: reportState.projectId,
     query_columns: reportState.columns,
     query_rows: reportState.rows,
     analysis: reportState.analysis,

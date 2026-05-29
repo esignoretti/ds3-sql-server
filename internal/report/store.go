@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 )
+
+var validID = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 type DiskStore struct {
 	baseDir string
@@ -21,6 +24,13 @@ func NewDiskStore(baseDir string) (*DiskStore, error) {
 
 func (s *DiskStore) path(id string) string {
 	return filepath.Join(s.baseDir, id+".json")
+}
+
+func (s *DiskStore) validateID(id string) error {
+	if !validID.MatchString(id) {
+		return fmt.Errorf("invalid report id: %q", id)
+	}
+	return nil
 }
 
 func (s *DiskStore) List() ([]ReportSummary, error) {
@@ -57,6 +67,9 @@ func (s *DiskStore) List() ([]ReportSummary, error) {
 }
 
 func (s *DiskStore) Save(report *Report) error {
+	if err := s.validateID(report.ID); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal report: %w", err)
@@ -68,6 +81,9 @@ func (s *DiskStore) Save(report *Report) error {
 }
 
 func (s *DiskStore) Get(id string) (*Report, error) {
+	if err := s.validateID(id); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(s.path(id))
 	if err != nil {
 		return nil, fmt.Errorf("read report %s: %w", id, err)
@@ -80,6 +96,9 @@ func (s *DiskStore) Get(id string) (*Report, error) {
 }
 
 func (s *DiskStore) Delete(id string) error {
+	if err := s.validateID(id); err != nil {
+		return err
+	}
 	if err := os.Remove(s.path(id)); err != nil {
 		return fmt.Errorf("delete report %s: %w", id, err)
 	}

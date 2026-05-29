@@ -42,6 +42,7 @@ func (h *ReportHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ReportHandler) Save(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 100<<20) // 100MB limit
 	var req reportSaveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)

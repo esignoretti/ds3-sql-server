@@ -48,7 +48,6 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
 
 	// Auth
 	iamClient := auth.NewIAMClient(cfg.IAMURL)
@@ -101,9 +100,10 @@ func main() {
 		}
 	})
 
-	// Protected group
+	// Protected group (with 60s timeout for query endpoints)
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Middleware(sessionStore))
+		r.Use(middleware.Timeout(60 * time.Second))
 		r.Get("/auth/me", authHandler.Me)
 
 			s3ClientForProject := func(r *http.Request) *s3.Client {
@@ -162,7 +162,11 @@ func main() {
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
+	})
 
+	// Protected group (no timeout — long-running operations)
+	r.Group(func(r chi.Router) {
+		r.Use(auth.Middleware(sessionStore))
 		r.Post("/analyze", analysisHandler.Analyze)
 		r.Get("/api/reports", reportHandler.List)
 		r.Post("/api/reports", reportHandler.Save)

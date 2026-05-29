@@ -16,6 +16,7 @@ func NewAnalysisHandler(engine *analysis.Engine) *AnalysisHandler {
 }
 
 func (h *AnalysisHandler) Analyze(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 50<<20) // 50MB limit
 	var req analysis.AnalysisRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)

@@ -80,7 +80,7 @@ func (e *Engine) Analyze(req AnalysisRequest) *AnalysisResult {
 	}
 
 	var rowVals []string
-	for _, row := range req.Rows {
+	for ri, row := range req.Rows {
 		vals := make([]string, len(row))
 		for vi, v := range row {
 			if v == nil {
@@ -89,8 +89,24 @@ func (e *Engine) Analyze(req AnalysisRequest) *AnalysisResult {
 				switch val := v.(type) {
 				case string:
 					vals[vi] = "'" + strings.ReplaceAll(val, "'", "''") + "'"
+				case bool:
+					if val {
+						vals[vi] = "TRUE"
+					} else {
+						vals[vi] = "FALSE"
+					}
+				case float64:
+					vals[vi] = fmt.Sprintf("%v", val)
+				case float32:
+					vals[vi] = fmt.Sprintf("%v", val)
+				case int:
+					vals[vi] = fmt.Sprintf("%d", val)
+				case int64:
+					vals[vi] = fmt.Sprintf("%d", val)
+				case int32:
+					vals[vi] = fmt.Sprintf("%d", val)
 				default:
-					vals[vi] = fmt.Sprintf("%v", v)
+					return &AnalysisResult{Error: fmt.Sprintf("unsupported value type %T at row %d col %s", v, ri, req.Columns[vi].Name), ElapsedMs: time.Since(start).Milliseconds()}
 				}
 			}
 		}
@@ -142,7 +158,7 @@ func (e *Engine) Analyze(req AnalysisRequest) *AnalysisResult {
 			if min != nil && max != nil && *min < *max {
 				binWidth := (*max - *min) / 10.0
 				histSQL := fmt.Sprintf(`SELECT
-					CAST(FLOOR((%s - %f) / %f) AS BIGINT) AS bucket,
+					LEAST(CAST(FLOOR((%s - %f) / %f) AS BIGINT), 9) AS bucket,
 					MIN(%s), MAX(%s), COUNT(*)
 					FROM analysis_data WHERE %s IS NOT NULL
 					GROUP BY bucket ORDER BY bucket`,

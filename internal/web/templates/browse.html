@@ -260,7 +260,8 @@ function clearQuery() {
 function analyzeResults() {
   if (!lastResult) { alert('Run a query first'); return; }
   var status = document.getElementById('query-status');
-  status.innerHTML = 'Analyzing...';
+  status.innerHTML = 'Saving analysis...';
+  // First get analysis
   fetch('/analyze', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -270,15 +271,26 @@ function analyzeResults() {
     })
   })
   .then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (d.error) { status.innerHTML = '<span class="error">' + d.error + '</span>'; return; }
-    sessionStorage.setItem('ds3sql_last_analysis', JSON.stringify(d));
-    sessionStorage.setItem('ds3sql_last_query', JSON.stringify({
-      sql: document.getElementById('sql-editor').value,
-      columns: lastResult.columns,
-      rows: lastResult.rows
-    }));
-    window.location.href = '/report';
+  .then(function(analysis) {
+    if (analysis.error) { status.innerHTML = '<span class="error">' + analysis.error + '</span>'; return; }
+    // Save as a report immediately (bypasses sessionStorage limits)
+    return fetch('/api/reports', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        title: 'Analysis - ' + new Date().toLocaleString(),
+        sql: document.getElementById('sql-editor').value,
+        project_id: selProject,
+        query_columns: lastResult.columns,
+        query_rows: lastResult.rows,
+        analysis: analysis,
+        charts: []
+      })
+    });
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(report) {
+    window.location.href = '/report?id=' + encodeURIComponent(report.id);
   })
   .catch(function(e) { status.innerHTML = '<span class="error">Error: ' + e.message + '</span>'; });
 }
