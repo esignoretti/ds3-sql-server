@@ -53,7 +53,9 @@ func detectFormat(filename string) string {
 		return "syslog"
 	case strings.HasSuffix(lower, ".json") || strings.HasSuffix(lower, ".jsonl"):
 		return "json"
-	case strings.HasSuffix(lower, ".log") || strings.HasSuffix(lower, ".txt") || strings.HasSuffix(lower, ".out") || strings.HasSuffix(lower, ".err"):
+	case strings.HasSuffix(lower, ".log"):
+		return "log"
+	case strings.HasSuffix(lower, ".txt") || strings.HasSuffix(lower, ".out") || strings.HasSuffix(lower, ".err"):
 		return "text"
 	default:
 		return "text"
@@ -196,14 +198,24 @@ func (e *Engine) convertFile(file, bucket, endpoint, accessKey, secretKey string
 	switch f {
 	case "syslog":
 		readSQL = fmt.Sprintf(`
-			SELECT columns[1] AS month, columns[2] AS day, columns[3] AS time,
-			       columns[4] AS host, columns[5] AS app,
-			       columns[6] AS pid,
-			       columns[array_length(columns)] AS message
-			FROM read_csv('%s', AUTO_DETECT=FALSE, DELIM=' ', HEADER=FALSE)
+			SELECT
+				columns[1] AS month,
+				columns[2] AS day,
+				columns[3] AS time,
+				columns[4] AS host,
+				columns[5] AS app_pid,
+				regexp_extract(columns[5], '^([^\\[]+)', 1) AS app,
+				regexp_extract(columns[5], '\\[([^\\]]+)\\]', 1) AS pid,
+				columns[array_length(columns)] AS message
+			FROM read_csv('%s', AUTO_DETECT=FALSE, DELIM=' ', QUOTE='"', HEADER=FALSE)
 		`, s3Path)
 	case "json":
 		readSQL = fmt.Sprintf("SELECT * FROM read_json_auto('%s')", s3Path)
+	case "log":
+		readSQL = fmt.Sprintf(`
+			SELECT *
+			FROM read_csv('%s', AUTO_DETECT=FALSE, DELIM=' ', QUOTE='"', HEADER=FALSE)
+		`, s3Path)
 	default:
 		readSQL = fmt.Sprintf("SELECT * FROM read_csv_auto('%s', HEADER=FALSE)", s3Path)
 	}

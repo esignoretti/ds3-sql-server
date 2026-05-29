@@ -9,8 +9,9 @@ func TestDetectFormat(t *testing.T) {
 		filename string
 		expected string
 	}{
-		{"server.log", "text"},
+		{"server.log", "log"},
 		{"auth.syslog", "syslog"},
+		{"access.log", "log"},
 		{"data.json", "json"},
 		{"data.jsonl", "json"},
 		{"output.txt", "text"},
