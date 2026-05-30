@@ -113,21 +113,6 @@ function renderFixedWidthStep2() {
   var html = '<div class="card"><h3>Step 2: Preview & Name Columns</h3>';
   html += '<div id="preview-table" style="overflow-x:auto;margin-top:0.75rem;"></div>';
   html += '</div>';
-
-  html += '<div class="card"><h3>Column Names & Types</h3>';
-  html += '<div id="fw-col-editors" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">';
-  for (var i = 0; i < currentConfig.columns.length; i++) {
-    var col = currentConfig.columns[i];
-    html += '<div style="display:flex;gap:0.25rem;align-items:center;background:var(--surface-2);padding:0.25rem 0.5rem;border-radius:var(--radius);">';
-    html += '<input type="text" value="' + escHtml(col.name) + '" style="width:80px;background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.15rem 0.25rem;font-size:0.8rem;" onchange="updateColName(' + i + ', this.value)">';
-    html += '<select style="background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.15rem;font-size:0.75rem;" onchange="updateColType(' + i + ', this.value)">';
-    ['VARCHAR','INTEGER','BIGINT','DOUBLE','BOOLEAN','TIMESTAMP'].forEach(function(t) {
-      html += '<option value="' + t + '"' + (col.type === t ? ' selected' : '') + '>' + t + '</option>';
-    });
-    html += '</select>';
-    html += '</div>';
-  }
-  html += '</div>';
   return html;
 }
 
@@ -216,8 +201,6 @@ function handleRulerClick(e) {
       cols.splice(i, 1);
       renderFixedWidthRuler();
       updatePreview();
-      renderFixedWidthColEditors();
-      renderFixedWidthPosInputs();
       return;
     }
   }
@@ -231,7 +214,6 @@ function handleRulerClick(e) {
   cols.splice(colIdx + 1, 0, newCol);
   renderFixedWidthRuler();
   updatePreview();
-  renderFixedWidthColEditors();
   renderFixedWidthPosInputs();
 }
 
@@ -246,6 +228,12 @@ function renderFixedWidthPosInputs() {
     html += '<span style="font-size:0.75rem;color:var(--text-muted);width:14px;">' + (i+1) + ':</span>';
     html += '<input type="number" value="' + (col.start !== undefined && col.start !== null ? col.start : 0) + '" min="0" onchange="updateColStart(' + i + ', this.value)" title="Start">';
     html += '<input type="number" value="' + (col.end !== undefined && col.end !== null ? col.end : '') + '" min="0" onchange="updateColEnd(' + i + ', this.value)" title="End (leave empty for rest of line)" placeholder="end">';
+    html += '<input type="text" value="' + escHtml(col.name) + '" style="width:80px;background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.15rem 0.25rem;font-size:0.8rem;font-family:monospace;" placeholder="name" onchange="updateColName(' + i + ', this.value)">';
+    html += '<select style="background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.15rem;font-size:0.75rem;" onchange="updateColType(' + i + ', this.value)">';
+    ['VARCHAR','INTEGER','BIGINT','DOUBLE','BOOLEAN','TIMESTAMP'].forEach(function(t) {
+      html += '<option value="' + t + '"' + (col.type === t ? ' selected' : '') + '>' + t + '</option>';
+    });
+    html += '</select>';
     html += '<button class="fw-del-col" onclick="removeFixedWidthColumn(' + i + ')" title="Delete column">\u00D7</button>';
     html += '</div>';
   }
@@ -285,7 +273,6 @@ function addFixedWidthColumn() {
   cols.push({name: 'col' + cols.length, type: 'VARCHAR', start: start});
   renderFixedWidthRuler();
   updatePreview();
-  renderFixedWidthColEditors();
   renderFixedWidthPosInputs();
 }
 
@@ -295,26 +282,7 @@ function removeFixedWidthColumn(idx) {
   cols.splice(idx, 1);
   renderFixedWidthRuler();
   updatePreview();
-  renderFixedWidthColEditors();
   renderFixedWidthPosInputs();
-}
-
-function renderFixedWidthColEditors() {
-  var container = document.getElementById('fw-col-editors');
-  if (!container) return;
-  var html = '';
-  for (var i = 0; i < currentConfig.columns.length; i++) {
-    var col = currentConfig.columns[i];
-    html += '<div style="display:flex;gap:0.25rem;align-items:center;background:var(--surface-2);padding:0.25rem 0.5rem;border-radius:var(--radius);">';
-    html += '<input type="text" value="' + escHtml(col.name) + '" style="width:80px;background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.15rem 0.25rem;font-size:0.8rem;" onchange="updateColName(' + i + ', this.value)">';
-    html += '<select style="background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.15rem;font-size:0.75rem;" onchange="updateColType(' + i + ', this.value)">';
-    ['VARCHAR','INTEGER','BIGINT','DOUBLE','BOOLEAN','TIMESTAMP'].forEach(function(t) {
-      html += '<option value="' + t + '"' + (col.type === t ? ' selected' : '') + '>' + t + '</option>';
-    });
-    html += '</select>';
-    html += '</div>';
-  }
-  container.innerHTML = html;
 }
 
 function updatePreview() {
