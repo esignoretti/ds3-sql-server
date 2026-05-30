@@ -1285,6 +1285,9 @@ var panelState = {
 var PANEL_COLORS = ['#0065FF','#27B681','#F3B356','#8739B1','#f87171','#06b6d4','#a78bfa','#fb923c','#34d399','#f472b6'];
 
 document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    closeAnalyticsPanel();
+  }
   if (e.ctrlKey && e.key === 'Enter') { runQuery(); }
 });
 </script>
