@@ -199,34 +199,17 @@ func (e *Engine) convertFile(file, bucket, endpoint, accessKey, secretKey string
 	// Check for saved column config first
 	savedCfg := e.colStore.Match(bucket, file)
 
-	var readSQL string
+	var (
+		readSQL string
+		sqlErr  error
+	)
 	if savedCfg != nil {
 		cfg := savedCfg
 		if cfg.Mode == "fixed_width" {
-			if len(cfg.Columns) == 0 {
-				return fmt.Errorf("fixed_width mode requires at least one column")
+			readSQL, sqlErr = buildFixedWidthSQL(cfg, s3Path)
+			if sqlErr != nil {
+				return sqlErr
 			}
-			var selects []string
-			for i, col := range cfg.Columns {
-				colName := col.Name
-				if colName == "" {
-					colName = fmt.Sprintf("col%d", i)
-				}
-				colType := col.Type
-				if colType == "" {
-					colType = "VARCHAR"
-				}
-				start := 0
-				if col.Start != nil {
-					start = *col.Start
-				}
-				if col.End != nil {
-					selects = append(selects, fmt.Sprintf("CAST(substr(text, %d, %d) AS %s) AS \"%s\"", start+1, *col.End-start, colType, strings.ReplaceAll(colName, "\"", "\"\"")))
-				} else {
-					selects = append(selects, fmt.Sprintf("CAST(substr(text, %d) AS %s) AS \"%s\"", start+1, colType, strings.ReplaceAll(colName, "\"", "\"\"")))
-				}
-			}
-			readSQL = fmt.Sprintf(`SELECT %s FROM read_text('%s')`, strings.Join(selects, ","), s3Path)
 		} else {
 			delim := cfg.Delimiter
 			quote := cfg.Quote
@@ -265,6 +248,33 @@ func (e *Engine) convertFile(file, bucket, endpoint, accessKey, secretKey string
 	}
 
 	return nil
+}
+
+func buildFixedWidthSQL(cfg *column.ColumnConfig, s3Path string) (string, error) {
+	if len(cfg.Columns) == 0 {
+		return "", fmt.Errorf("fixed_width mode requires at least one column")
+	}
+	var selects []string
+	for i, col := range cfg.Columns {
+		colName := col.Name
+		if colName == "" {
+			colName = fmt.Sprintf("col%d", i)
+		}
+		colType := col.Type
+		if colType == "" {
+			colType = "VARCHAR"
+		}
+		start := 0
+		if col.Start != nil {
+			start = *col.Start
+		}
+		if col.End != nil {
+			selects = append(selects, fmt.Sprintf("CAST(substr(text, %d, %d) AS %s) AS \"%s\"", start+1, *col.End-start, colType, strings.ReplaceAll(colName, "\"", "\"\"")))
+		} else {
+			selects = append(selects, fmt.Sprintf("CAST(substr(text, %d) AS %s) AS \"%s\"", start+1, colType, strings.ReplaceAll(colName, "\"", "\"\"")))
+		}
+	}
+	return fmt.Sprintf(`SELECT %s FROM read_text('%s')`, strings.Join(selects, ","), s3Path), nil
 }
 
 func (e *Engine) deleteOriginal(ctx context.Context, bucket, file, endpoint, accessKey, secretKey string) error {

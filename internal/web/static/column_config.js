@@ -260,7 +260,7 @@ function updateColStart(idx, val) {
 }
 
 function updateColEnd(idx, val) {
-  var v = val === '' ? null : parseInt(val);
+  var v = (val === '' || val === null) ? null : parseInt(val);
   currentConfig.columns[idx].end = v;
   updatePreview();
 }
