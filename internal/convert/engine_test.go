@@ -50,11 +50,11 @@ func TestBuildFixedWidthSQL(t *testing.T) {
 	if !strings.Contains(sql, "read_text") {
 		t.Error("expected read_text in SQL")
 	}
-	if !strings.Contains(sql, `substr(text, 1, 16)`) {
-		t.Errorf("expected substr(text, 1, 16) for col0, got: %s", sql)
+	if !strings.Contains(sql, `substr(content, 1, 16)`) {
+		t.Errorf("expected substr(content, 1, 16) for col0, got: %s", sql)
 	}
-	if !strings.Contains(sql, `substr(text, 32)`) {
-		t.Errorf("expected substr(text, 32) for col1 (no end), got: %s", sql)
+	if !strings.Contains(sql, `substr(content, 32)`) {
+		t.Errorf("expected substr(content, 32) for col1 (no end), got: %s", sql)
 	}
 	if !strings.Contains(sql, `AS "ts"`) {
 		t.Errorf("expected quoted column name ts, got: %s", sql)
@@ -96,8 +96,26 @@ func TestBuildFixedWidthSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(sql3, `substr(text, 1)`) {
-		t.Errorf("expected substr(text, 1) for nil start, got: %s", sql3)
+	if !strings.Contains(sql3, `substr(content, 1)`) {
+		t.Errorf("expected substr(content, 1) for nil start, got: %s", sql3)
+	}
+
+	// Format/strptime support
+	fmtCol := &column.ColumnConfig{
+		Mode: "fixed_width",
+		Columns: []column.ColumnDef{
+			{Name: "ts", Type: "TIMESTAMP", Start: &s0, End: &e0, Format: "%b %d %H:%M:%S"},
+		},
+	}
+	sql4, err := buildFixedWidthSQL(fmtCol, "s3://b/f")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql4, `strptime`) {
+		t.Errorf("expected strptime when Format is set, got: %s", sql4)
+	}
+	if !strings.Contains(sql4, `'%b %d %H:%M:%S'`) {
+		t.Errorf("expected format string in strptime, got: %s", sql4)
 	}
 }
 

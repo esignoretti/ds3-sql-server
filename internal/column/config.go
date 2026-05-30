@@ -11,10 +11,11 @@ import (
 )
 
 type ColumnDef struct {
-	Name  string `json:"name"`
-	Type  string `json:"type"`
-	Start *int   `json:"start,omitempty"`
-	End   *int   `json:"end,omitempty"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Start  *int   `json:"start,omitempty"`
+	End    *int   `json:"end,omitempty"`
+	Format string `json:"format,omitempty"`
 }
 
 type ColumnConfig struct {

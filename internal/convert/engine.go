@@ -268,10 +268,16 @@ func buildFixedWidthSQL(cfg *column.ColumnConfig, s3Path string) (string, error)
 		if col.Start != nil {
 			start = *col.Start
 		}
+		var subExpr string
 		if col.End != nil {
-			selects = append(selects, fmt.Sprintf("CAST(substr(text, %d, %d) AS %s) AS \"%s\"", start+1, *col.End-start, colType, strings.ReplaceAll(colName, "\"", "\"\"")))
+			subExpr = fmt.Sprintf("substr(content, %d, %d)", start+1, *col.End-start)
 		} else {
-			selects = append(selects, fmt.Sprintf("CAST(substr(text, %d) AS %s) AS \"%s\"", start+1, colType, strings.ReplaceAll(colName, "\"", "\"\"")))
+			subExpr = fmt.Sprintf("substr(content, %d)", start+1)
+		}
+		if col.Format != "" {
+			selects = append(selects, fmt.Sprintf("strptime(%s, '%s') AS \"%s\"", subExpr, strings.ReplaceAll(col.Format, "'", "''"), strings.ReplaceAll(colName, "\"", "\"\"")))
+		} else {
+			selects = append(selects, fmt.Sprintf("CAST(%s AS %s) AS \"%s\"", subExpr, colType, strings.ReplaceAll(colName, "\"", "\"\"")))
 		}
 	}
 	return fmt.Sprintf(`SELECT %s FROM read_text('%s')`, strings.Join(selects, ","), s3Path), nil

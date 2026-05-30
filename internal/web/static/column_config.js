@@ -339,6 +339,15 @@ function updateColType(idx, val) {
   currentConfig.columns[idx].type = val;
 }
 
+function updateColTypeWithFormat(idx, val) {
+  currentConfig.columns[idx].type = val;
+  renderFixedWidthColDefs();
+}
+
+function updateColFormat(idx, val) {
+  currentConfig.columns[idx].format = val;
+}
+
 function addFixedWidthColumn() {
   var cols = currentConfig.columns;
   var lastCol = cols[cols.length - 1];
@@ -371,14 +380,18 @@ function renderFixedWidthColDefs() {
   var html = '';
   for (var i = 0; i < currentConfig.columns.length; i++) {
     var col = currentConfig.columns[i];
+    var showFormat = col.type === 'TIMESTAMP' || col.type === 'DATE' || col.type === 'TIME';
     html += '<div style="display:flex;gap:0.5rem;align-items:center;background:var(--surface-2);padding:0.5rem;border-radius:var(--radius);flex-wrap:wrap;">';
     html += '<span style="font-size:0.8rem;color:var(--text-muted);font-weight:600;min-width:2rem;">' + (i+1) + '.</span>';
     html += '<input type="text" value="' + escHtml(col.name) + '" placeholder="name" style="width:120px;background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.25rem 0.4rem;font-size:0.8rem;font-family:monospace;" onchange="updateColName(' + i + ', this.value)">';
-    html += '<select style="background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.2rem;font-size:0.75rem;" onchange="updateColType(' + i + ', this.value)">';
-    ['VARCHAR','INTEGER','BIGINT','DOUBLE','BOOLEAN','TIMESTAMP'].forEach(function(t) {
+    html += '<select style="background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.2rem;font-size:0.75rem;" onchange="updateColTypeWithFormat(' + i + ', this.value)">';
+    ['VARCHAR','INTEGER','BIGINT','DOUBLE','BOOLEAN','TIMESTAMP','DATE','TIME'].forEach(function(t) {
       html += '<option value="' + t + '"' + (col.type === t ? ' selected' : '') + '>' + t + '</option>';
     });
     html += '</select>';
+    if (showFormat) {
+      html += '<input type="text" value="' + escHtml(col.format || '') + '" placeholder="strptime format e.g. %Y-%m-%d" style="width:200px;background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.2rem 0.3rem;font-size:0.8rem;font-family:monospace;" onchange="updateColFormat(' + i + ', this.value)">';
+    }
     html += '<span style="font-size:0.8rem;color:var(--text-muted);">Start:</span>';
     html += '<input type="number" value="' + (col.start !== undefined && col.start !== null ? col.start : 0) + '" min="0" style="width:60px;background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.2rem 0.3rem;font-size:0.8rem;font-family:monospace;" onchange="updateColStart(' + i + ', this.value)">';
     html += '<span style="font-size:0.8rem;color:var(--text-muted);">End:</span>';
@@ -508,44 +521,98 @@ function saveConfig() {
 }
 
 function saveAndConvert() {
-  // Save the config first
   var patternInput = document.getElementById('config-pattern');
   if (patternInput) currentConfig.pattern = patternInput.value;
   var profileInput = document.getElementById('profile-name');
   if (profileInput) currentConfig.profile_name = profileInput.value;
 
-  // Get current file from URL
   var params = new URLSearchParams(window.location.search);
   var file = params.get('file');
   if (!file) { alert('No file specified'); return; }
-  var projectId = params.get('project');
+  var projectId = params.get('project') || selProject;
   var bucket = currentConfig.bucket;
 
-  // Save and then start conversion
+  // Show progress in the target page
+  var statusDiv = document.createElement('div');
+  statusDiv.className = 'card';
+  statusDiv.innerHTML = '<h3>Converting...</h3><div id="conv-status"><p style="color:var(--text-muted);">Saving config...</p></div>';
+  document.querySelector('.config-layout').appendChild(statusDiv);
+
   fetch('/convert/columns', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(currentConfig)
   })
   .then(function(r) { return r.json(); })
-  .then(function() {
-    // Start conversion for this single file
-    return fetch('/convert?project=' + encodeURIComponent(projectId || selProject), {
+  .then(function(saveResult) {
+    if (saveResult.error) {
+      document.getElementById('conv-status').innerHTML = '<span class="error">Error saving config: ' + saveResult.error + '</span>';
+      return;
+    }
+    document.getElementById('conv-status').innerHTML = '<p style="color:var(--text-muted);">Starting conversion...</p>';
+    return fetch('/convert?project=' + encodeURIComponent(projectId), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        bucket: bucket,
-        files: [file],
-        delete_original: false
-      })
+      body: JSON.stringify({bucket: bucket, files: [file], delete_original: false})
     });
   })
-  .then(function(r) { return r.json(); })
-  .then(function(job) {
-    // Redirect to browse page with conversion progress
-    window.location.href = '/browse';
+  .then(function(r) {
+    if (!r) return;
+    if (!r.ok) { return r.json().then(function(e) { throw new Error(e.error || 'conversion request failed'); }); }
+    return r.json();
   })
-  .catch(function(e) { alert('Error: ' + e.message); });
+  .then(function(job) {
+    if (!job) return;
+    if (job.error) { document.getElementById('conv-status').innerHTML = '<span class="error">' + job.error + '</span>'; return; }
+    document.getElementById('conv-status').innerHTML = '<p style="color:var(--text-muted);">Conversion job started. Monitoring...</p>';
+    pollSaveConvertStatus(job.job_id, projectId);
+  })
+  .catch(function(e) {
+    var s = document.getElementById('conv-status');
+    if (s) s.innerHTML = '<span class="error">' + e.message + '</span>';
+    else alert(e.message);
+  });
+}
+
+function pollSaveConvertStatus(jobId, projectId) {
+  var div = document.getElementById('conv-status');
+  if (!div) return;
+
+  fetch('/convert/status/' + encodeURIComponent(jobId))
+    .then(function(r) { return r.json(); })
+    .then(function(job) {
+      var pct = job.total > 0 ? Math.round(job.completed / job.total * 100) : 0;
+      var html = '<div style="margin-bottom:0.75rem;">';
+      html += '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">';
+      html += '<div style="flex:1;height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden;">';
+      html += '<div style="height:100%;width:' + pct + '%;background:var(--primary);border-radius:4px;transition:width 0.5s;"></div></div>';
+      html += '<span style="font-size:0.85rem;color:var(--text-muted);">' + job.completed + '/' + job.total + '</span>';
+      html += '</div>';
+      if (job.results && job.results.length) {
+        job.results.forEach(function(r) {
+          var icon = r.status === 'done' ? '✅' : r.status === 'error' ? '❌' : r.status === 'running' ? '⏳' : '⬜';
+          var err = r.error ? ': ' + r.error : '';
+          html += '<div style="font-size:0.85rem;">' + icon + ' ' + r.file + ' — ' + r.status + err + '</div>';
+        });
+      }
+      html += '</div>';
+
+      if (job.status === 'running') {
+        html += '<p style="font-size:0.8rem;color:var(--text-muted);">Running...</p>';
+        div.innerHTML = html;
+        setTimeout(function() { pollSaveConvertStatus(jobId, projectId); }, 2000);
+      } else if (job.status === 'done') {
+        html += '<p style="color:var(--green);font-weight:600;">Conversion complete!</p>';
+        html += '<button class="btn" onclick="window.location.href=\'/browse?project=' + encodeURIComponent(projectId) + '\'">Go to Console</button>';
+        div.innerHTML = html;
+      } else {
+        html += '<span class="error">Conversion failed</span>';
+        div.innerHTML = html;
+      }
+    })
+    .catch(function(e) {
+      div.innerHTML = '<span class="error">Status poll error: ' + e.message + '</span>';
+    });
 }
 
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
