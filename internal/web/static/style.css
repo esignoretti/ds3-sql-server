@@ -360,14 +360,14 @@ tbody tr:hover {
   color: var(--text-muted);
   padding: 0 0.5rem;
 }
-.seg-0 { background: rgba(0,101,255,0.15); }
-.seg-1 { background: rgba(135,57,177,0.15); }
-.seg-2 { background: rgba(39,182,129,0.15); }
-.seg-3 { background: rgba(243,179,86,0.15); }
-.seg-4 { background: rgba(248,113,113,0.15); }
-.seg-5 { background: rgba(0,200,200,0.15); }
-.seg-6 { background: rgba(255,165,0,0.15); }
-.seg-7 { background: rgba(180,130,255,0.15); }
+.fw-seg-0 { background: rgba(0,101,255,0.15); }
+.fw-seg-1 { background: rgba(135,57,177,0.15); }
+.fw-seg-2 { background: rgba(39,182,129,0.15); }
+.fw-seg-3 { background: rgba(243,179,86,0.15); }
+.fw-seg-4 { background: rgba(248,113,113,0.15); }
+.fw-seg-5 { background: rgba(0,200,200,0.15); }
+.fw-seg-6 { background: rgba(255,165,0,0.15); }
+.fw-seg-7 { background: rgba(180,130,255,0.15); }
 .fw-split-marker {
   display: inline-block;
   width: 0;
@@ -425,7 +425,7 @@ tbody tr:hover {
   margin-top: 0.5rem;
 }
 /* Mode toggle pills */
-.mode-toggle {
+.fw-mode-toggle {
   display: flex;
   gap: 0;
   margin-bottom: 0.75rem;
@@ -435,7 +435,7 @@ tbody tr:hover {
   border: 0.0625rem solid var(--border);
   width: fit-content;
 }
-.mode-toggle button {
+.fw-mode-toggle button {
   padding: 0.4rem 1rem;
   border: none;
   background: transparent;
@@ -445,11 +445,11 @@ tbody tr:hover {
   font-family: "Source Sans 3", Arial, sans-serif;
   transition: all 0.15s;
 }
-.mode-toggle button.active {
+.fw-mode-toggle button.active {
   background: var(--primary);
   color: white;
 }
-.mode-toggle button:not(.active):hover {
+.fw-mode-toggle button:not(.active):hover {
   background: var(--surface);
   color: var(--text);
 }
