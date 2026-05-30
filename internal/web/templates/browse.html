@@ -547,11 +547,13 @@ function selectRepresentativeRows(colIdx, maxRows) {
     var sqDiff = vals.reduce(function(s, x) { return s + (x.val - mean) * (x.val - mean); }, 0);
     var stddev = Math.sqrt(sqDiff / vals.length);
     if (stddev > 0) {
-      for (var vi = 0; vi < vals.length && selected.length < maxRows; vi++) {
+      var outlierCount = 0;
+      for (var vi = 0; vi < vals.length && outlierCount < 3 && selected.length < maxRows; vi++) {
         var z = Math.abs((vals[vi].val - mean) / stddev);
         if (z > 2 && !used.has(vals[vi].idx)) {
           used.add(vals[vi].idx);
           selected.push(vals[vi].idx);
+          outlierCount++;
         }
       }
     }
