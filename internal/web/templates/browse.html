@@ -441,13 +441,20 @@ function openAnalyticsPanel(colName, colIdx, evt) {
 
   if (!isMulti) {
     panelState.selectedCols = [{name: colName, idx: colIdx}];
+    panelState.activeMultiCols = {};
   } else {
+    if (!Object.keys(panelState.activeMultiCols).length) {
+      for (var i = 0; i < panelState.selectedCols.length; i++) {
+        panelState.activeMultiCols[panelState.selectedCols[i].name] = true;
+      }
+    }
     var existing = panelState.selectedCols.findIndex(function(c) { return c.name === colName; });
     if (existing >= 0) {
       panelState.selectedCols.splice(existing, 1);
       if (!panelState.selectedCols.length) { closeAnalyticsPanel(); return; }
     } else {
       panelState.selectedCols.push({name: colName, idx: colIdx});
+      panelState.activeMultiCols[colName] = true;
     }
   }
 
@@ -608,7 +615,8 @@ function renderMultiColumnPanel() {
   html += '<div class="apanel-col-list">';
   for (var i = 0; i < panelState.selectedCols.length; i++) {
     var c = panelState.selectedCols[i];
-    html += '<span class="apanel-col-tag active" onclick="toggleMultiCol(' + i + ')">' + escHtml(c.name) + ' <span class="remove-col" onclick="event.stopPropagation(); removeMultiCol(' + i + ')">\u00D7</span></span>';
+    var isActive = panelState.activeMultiCols[c.name] !== false;
+    html += '<span class="apanel-col-tag' + (isActive ? ' active' : '') + '" onclick="toggleMultiCol(' + i + ')">' + escHtml(c.name) + ' <span class="remove-col" onclick="event.stopPropagation(); removeMultiCol(' + i + ')">\u00D7</span></span>';
   }
   html += '</div>';
 
@@ -645,10 +653,16 @@ function renderMultiColumnPanel() {
 }
 
 function toggleMultiCol(idx) {
-  renderMultiColumnCharts();
+  var c = panelState.selectedCols[idx];
+  if (!c) return;
+  var current = panelState.activeMultiCols[c.name];
+  panelState.activeMultiCols[c.name] = current === false ? true : false;
+  renderAnalyticsPanel();
 }
 
 function removeMultiCol(idx) {
+  var removed = panelState.selectedCols[idx];
+  if (removed) delete panelState.activeMultiCols[removed.name];
   panelState.selectedCols.splice(idx, 1);
   if (panelState.selectedCols.length <= 1) {
     if (panelState.selectedCols.length === 1) {
@@ -1114,7 +1128,10 @@ function renderMultiColumnCharts() {
   var ctx = canvas.getContext('2d');
   if (canvas._chart) { canvas._chart.destroy(); }
 
-  var activeCols = panelState.selectedCols;
+  var activeCols = panelState.selectedCols.filter(function(c) {
+    return panelState.activeMultiCols[c.name] !== false;
+  });
+  if (!activeCols.length) return;
   var datasets = [];
   var allLabels = [];
 
@@ -1125,42 +1142,41 @@ function renderMultiColumnCharts() {
   });
 
   if (allNumeric) {
-    // Overlaid normalized histograms
+    // Overlaid normalized histograms using bin centers for common x-axis
     var allBins = [];
-    var maxCount = 0;
     for (var i = 0; i < activeCols.length; i++) {
       var analysis = panelState.analysisCache.columns[activeCols[i].name];
       if (!analysis || !analysis.histogram || !analysis.histogram.length) continue;
       var bins = analysis.histogram;
       var total = bins.reduce(function(s, b) { return s + b.count; }, 0);
-      var normalized = bins.map(function(b) { return total > 0 ? b.count / total : 0; });
-      var labels = bins.map(function(b) { return b.bin_start.toFixed(1) + '-' + b.bin_end.toFixed(1); });
-      if (labels.length > allLabels.length) allLabels = labels;
-      allBins.push({name: activeCols[i].name, data: normalized, bins: bins});
-      normalized.forEach(function(v) { if (v > maxCount) maxCount = v; });
+      var points = bins.map(function(b) {
+        return {
+          x: (b.bin_start + b.bin_end) / 2,
+          y: total > 0 ? b.count / total : 0
+        };
+      });
+      allBins.push({name: activeCols[i].name, points: points});
     }
 
+    if (!allBins.length) return;
+
     datasets = allBins.map(function(b, i) {
-      // Pad data to match allLabels length
-      var padded = new Array(allLabels.length).fill(0);
-      for (var j = 0; j < b.data.length && j < allLabels.length; j++) {
-        padded[j] = b.data[j];
-      }
       return {
         label: b.name,
-        data: padded,
+        data: b.points,
         backgroundColor: PANEL_COLORS[i % PANEL_COLORS.length] + '66',
         borderColor: PANEL_COLORS[i % PANEL_COLORS.length],
         borderWidth: 1,
         fill: true,
         tension: 0.3,
-        pointRadius: 0
+        pointRadius: 0,
+        showLine: true
       };
     });
 
     canvas._chart = new Chart(ctx, {
-      type: 'line',
-      data: { labels: allLabels, datasets: datasets },
+      type: 'scatter',
+      data: { datasets: datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -1169,17 +1185,23 @@ function renderMultiColumnCharts() {
           tooltip: {
             callbacks: {
               label: function(ctx) {
-                return ctx.dataset.label + ': ' + (ctx.parsed.y * 100).toFixed(1) + '%';
+                return ctx.dataset.label + ': ' + (ctx.parsed.y * 100).toFixed(1) + '% at ' + ctx.parsed.x.toFixed(2);
               }
             }
           }
         },
         scales: {
-          x: { ticks: { color: '#9099A1', font: { size: 8 } }, grid: { color: '#31393F' } },
+          x: {
+            type: 'linear',
+            ticks: { color: '#9099A1', font: { size: 8 } },
+            grid: { color: '#31393F' },
+            title: { display: true, text: 'Value', color: '#9099A1', font: { size: 9 } }
+          },
           y: {
             ticks: { color: '#9099A1', font: { size: 8 }, callback: function(v) { return (v * 100).toFixed(0) + '%'; } },
             grid: { color: '#31393F' },
-            beginAtZero: true
+            beginAtZero: true,
+            title: { display: true, text: 'Density', color: '#9099A1', font: { size: 9 } }
           }
         },
         elements: { point: { radius: 0 } }
@@ -1257,7 +1279,8 @@ function fetchAnalysis() {
 var panelState = {
   selectedCols: [],
   analysisCache: null,  // cached /analyze response
-  fetchingAnalysis: false
+  fetchingAnalysis: false,
+  activeMultiCols: {}   // set of active column names for multi-mode
 };
 var PANEL_COLORS = ['#0065FF','#27B681','#F3B356','#8739B1','#f87171','#06b6d4','#a78bfa','#fb923c','#34d399','#f472b6'];
 
