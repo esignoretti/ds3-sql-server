@@ -50,6 +50,13 @@
           <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="analyzeResults()">📊 Analyze</button>
         </div>
         <div id="query-results" style="overflow-x:auto;"></div>
+        <!-- Column Analytics Panel -->
+        <div id="analytics-backdrop" class="analytics-backdrop" onclick="closeAnalyticsPanel()"></div>
+        <div id="analytics-panel" class="analytics-panel">
+          <div id="analytics-panel-content">
+            <p style="color:var(--text-muted);font-size:0.85rem;">Click a column header to see analytics</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -82,14 +89,21 @@ function switchProject(id) {
   selProject = id;
   selBucket = '';
   selPaths = [];
+  showBuckets();
+}
+
+function showBuckets() {
+  if (!selProject) return;
+  selBucket = '';
+  selPaths = [];
   document.getElementById('breadcrumb').textContent = 'Loading buckets...';
   document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
-  fetch('/buckets?project=' + encodeURIComponent(id))
+  fetch('/buckets?project=' + encodeURIComponent(selProject))
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.error) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--red);">' + d.error + '</p>'; return; }
       if (!d.buckets || !d.buckets.length) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">No buckets</p>'; return; }
-      document.getElementById('breadcrumb').textContent = 'Buckets';
+      document.getElementById('breadcrumb').innerHTML = '<a href="#" onclick="showBuckets();return false" style="color:var(--primary);text-decoration:none;">Buckets</a>';
       var html = '';
       d.buckets.forEach(function(b) { html += '<div class="bucket-item" onclick="loadPrefix(\'' + escJs(b.name) + '\',\'\')">📁 ' + escHtml(b.name) + '</div>'; });
       html += '<div style="margin-top:0.75rem;border-top:0.0625rem solid var(--border);padding-top:0.75rem;">';
@@ -104,7 +118,7 @@ function switchProject(id) {
 function loadPrefix(bucket, prefix) {
   selBucket = bucket;
   var crumb = document.getElementById('breadcrumb');
-  crumb.textContent = bucket + '/' + prefix;
+  crumb.innerHTML = '<a href="#" onclick="showBuckets();return false" style="color:var(--primary);text-decoration:none;">Buckets</a> / ' + escHtml(bucket) + (prefix ? '/' + escHtml(prefix) : '');
   document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
   fetch('/buckets/' + encodeURIComponent(bucket) + '?project=' + encodeURIComponent(selProject) + '&prefix=' + encodeURIComponent(prefix))
     .then(function(r) { return r.json(); })
@@ -418,6 +432,13 @@ function fmtSize(b) {
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escJs(s) { return s.replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// --- Analytics Panel State ---
+var panelState = {
+  selectedCols: [],
+  analysisCache: null  // cached /analyze response
+};
+var PANEL_COLORS = ['#0065FF','#27B681','#F3B356','#8739B1','#f87171','#06b6d4','#a78bfa','#fb923c','#34d399','#f472b6'];
 
 document.addEventListener('keydown', function(e) {
   if (e.ctrlKey && e.key === 'Enter') { runQuery(); }
