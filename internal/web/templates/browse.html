@@ -576,6 +576,137 @@ function selectRepresentativeRows(colIdx, maxRows) {
   return selected.sort(function(a,b) { return a - b; });
 }
 
+function renderAnalyticsPanel() {
+  var content = document.getElementById('analytics-panel-content');
+  if (!content || !panelState.selectedCols.length) return;
+
+  var isMulti = panelState.selectedCols.length > 1;
+
+  var html = '';
+
+  if (isMulti) {
+    html += renderMultiColumnPanel();
+  } else {
+    html += renderSingleColumnPanel();
+  }
+
+  content.innerHTML = html;
+  renderPanelCharts();
+}
+
+function renderSingleColumnPanel() {
+  var col = panelState.selectedCols[0];
+  var colDef = lastResult.columns[col.idx];
+  var stats = computeQuickStats(col.idx);
+  var reprRows = selectRepresentativeRows(col.idx);
+  var analysis = panelState.analysisCache ? panelState.analysisCache.columns[col.name] : null;
+
+  var html = '';
+
+  // Header
+  html += '<div class="apanel-header">';
+  html += '<h3>' + escHtml(col.name) + ' <span class="type-badge">' + escHtml(colDef.type) + '</span></h3>';
+  html += '<button class="apanel-close" onclick="closeAnalyticsPanel()">\u00D7</button>';
+  html += '</div>';
+
+  // Quick stats
+  html += '<div class="apanel-stats">';
+  html += '<span class="apanel-stat"><span class="apanel-stat-label">Rows:</span> <span class="apanel-stat-value">' + stats.total + '</span></span>';
+  html += '<span class="apanel-stat"><span class="apanel-stat-label">Null:</span> <span class="apanel-stat-value null">' + stats.nullCount + ' (' + stats.nullPct + '%)</span></span>';
+  html += '<span class="apanel-stat"><span class="apanel-stat-label">Distinct:</span> <span class="apanel-stat-value distinct">' + stats.distinct + '</span></span>';
+  if (stats.isNumeric) {
+    html += '<span class="apanel-stat"><span class="apanel-stat-label">Min:</span> <span class="apanel-stat-value">' + (stats.min !== null ? stats.min.toFixed(2) : '—') + '</span></span>';
+    html += '<span class="apanel-stat"><span class="apanel-stat-label">Max:</span> <span class="apanel-stat-value">' + (stats.max !== null ? stats.max.toFixed(2) : '—') + '</span></span>';
+    html += '<span class="apanel-stat"><span class="apanel-stat-label">Mean:</span> <span class="apanel-stat-value">' + (stats.mean || '—') + '</span></span>';
+  }
+  if (stats.topValues.length) {
+    html += '<span class="apanel-stat"><span class="apanel-stat-label">Top:</span> <span class="apanel-stat-value" style="font-weight:400;font-size:0.75rem;">' + escHtml(stats.topValues.join(', ')) + '</span></span>';
+  }
+  html += '</div>';
+
+  // Chart area
+  html += '<div id="apanel-chart" class="apanel-chart-wrap">';
+  if (analysis) {
+    html += '<div class="chart-canvas-wrapper"><canvas id="apanel-canvas"></canvas></div>';
+  } else {
+    html += '<div class="apanel-loading">Loading histogram...</div>';
+  }
+  html += '</div>';
+
+  // Summary line
+  if (analysis && panelState.analysisCache) {
+    var summary = findColumnSummary(col.name);
+    if (summary) {
+      html += '<div class="apanel-summary">' + escHtml(summary) + '</div>';
+    }
+  }
+
+  // Representative rows
+  html += '<div class="apanel-repr">';
+  html += '<h4>Representative Rows</h4>';
+
+  // Determine neighbor columns
+  var leftIdx = col.idx > 0 ? col.idx - 1 : (col.idx + 1 < lastResult.columns.length ? col.idx + 1 : -1);
+  var rightIdx = col.idx + 1 < lastResult.columns.length ? col.idx + 1 : (col.idx > 0 ? col.idx - 1 : -1);
+  // Ensure left/right are different and not same as col
+  if (leftIdx === col.idx) leftIdx = -1;
+  if (rightIdx === col.idx) rightIdx = -1;
+  if (leftIdx === rightIdx) rightIdx = -1;
+
+  html += '<table><thead><tr><th>#</th>';
+  if (leftIdx >= 0) html += '<th>' + escHtml(lastResult.columns[leftIdx].name) + '</th>';
+  html += '<th>' + escHtml(col.name) + '</th>';
+  if (rightIdx >= 0) html += '<th>' + escHtml(lastResult.columns[rightIdx].name) + '</th>';
+  html += '</tr></thead><tbody>';
+
+  for (var ri = 0; ri < reprRows.length; ri++) {
+    var rowIdx = reprRows[ri];
+    html += '<tr>';
+    html += '<td><span class="row-idx" onclick="scrollToRow(' + rowIdx + ')">' + (rowIdx + 1) + '</span></td>';
+    if (leftIdx >= 0) html += '<td>' + formatCell(lastResult.rows[rowIdx][leftIdx]) + '</td>';
+    html += '<td>' + formatCell(lastResult.rows[rowIdx][col.idx]) + '</td>';
+    if (rightIdx >= 0) html += '<td>' + formatCell(lastResult.rows[rowIdx][rightIdx]) + '</td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  html += '</div>';
+
+  return html;
+}
+
+function formatCell(val) {
+  if (val === null || val === undefined) return '<span class="null-val">NULL</span>';
+  return escHtml(String(val));
+}
+
+function scrollToRow(rowIdx) {
+  var table = document.querySelector('#query-results table');
+  if (!table) return;
+  var rows = table.querySelectorAll('tbody tr');
+  if (rows[rowIdx]) {
+    rows[rowIdx].scrollIntoView({block: 'center', behavior: 'smooth'});
+    rows[rowIdx].style.background = 'var(--primary)';
+    rows[rowIdx].style.color = '#fff';
+    setTimeout(function() {
+      rows[rowIdx].style.background = '';
+      rows[rowIdx].style.color = '';
+    }, 2000);
+  }
+}
+
+function findColumnSummary(colName) {
+  if (!panelState.analysisCache || !panelState.analysisCache.summary) return null;
+  for (var i = 0; i < panelState.analysisCache.summary.length; i++) {
+    if (panelState.analysisCache.summary[i].startsWith(colName + ' ')) {
+      return panelState.analysisCache.summary[i];
+    }
+    if (panelState.analysisCache.summary[i].startsWith(colName + ':')) {
+      return panelState.analysisCache.summary[i];
+    }
+  }
+  return null;
+}
+
 function fetchAnalysis() {
   if (!lastResult || panelState.fetchingAnalysis) return;
   panelState.fetchingAnalysis = true;
