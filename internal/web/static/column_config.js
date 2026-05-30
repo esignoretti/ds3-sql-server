@@ -11,6 +11,7 @@ var currentConfig = {
   columns: []
 };
 var savedConfigsForBucket = [];
+var PANEL_COLORS = ['#0065FF','#27B681','#F3B356','#8739B1','#f87171','#06b6d4','#a78bfa','#fb923c','#34d399','#f472b6'];
 
 function loadPreview(bucket, file) {
   currentConfig.bucket = bucket;
@@ -74,6 +75,7 @@ function renderConfig() {
   document.getElementById('config-app').innerHTML = html;
   if (currentConfig.mode === 'fixed_width') {
     renderFixedWidthRuler();
+    renderFixedWidthColDefs();
   }
   updatePreview();
 }
@@ -127,24 +129,7 @@ function renderFixedWidthStep2() {
   html += '</div>';
 
   html += '<div class="card"><h3>Column Definitions</h3>';
-  html += '<div id="fw-col-defs" style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.75rem;">';
-  for (var i = 0; i < currentConfig.columns.length; i++) {
-    var col = currentConfig.columns[i];
-    html += '<div style="display:flex;gap:0.5rem;align-items:center;background:var(--surface-2);padding:0.5rem;border-radius:var(--radius);flex-wrap:wrap;">';
-    html += '<span style="font-size:0.8rem;color:var(--text-muted);font-weight:600;min-width:2rem;">' + (i+1) + '.</span>';
-    html += '<input type="text" value="' + escHtml(col.name) + '" placeholder="name" style="width:120px;background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.25rem 0.4rem;font-size:0.8rem;font-family:monospace;" onchange="updateColName(' + i + ', this.value)">';
-    html += '<select style="background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.2rem;font-size:0.75rem;" onchange="updateColType(' + i + ', this.value)">';
-    ['VARCHAR','INTEGER','BIGINT','DOUBLE','BOOLEAN','TIMESTAMP'].forEach(function(t) {
-      html += '<option value="' + t + '"' + (col.type === t ? ' selected' : '') + '>' + t + '</option>';
-    });
-    html += '</select>';
-    html += '<span style="font-size:0.8rem;color:var(--text-muted);">Start:</span>';
-    html += '<input type="number" value="' + (col.start !== undefined && col.start !== null ? col.start : 0) + '" min="0" style="width:60px;background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.2rem 0.3rem;font-size:0.8rem;font-family:monospace;" onchange="updateColStart(' + i + ', this.value)">';
-    html += '<span style="font-size:0.8rem;color:var(--text-muted);">End:</span>';
-    html += '<input type="number" value="' + (col.end !== undefined && col.end !== null ? col.end : '') + '" min="0" style="width:60px;background:var(--surface);color:var(--text);border:0.0625rem solid var(--border);border-radius:0.25rem;padding:0.2rem 0.3rem;font-size:0.8rem;font-family:monospace;" placeholder="end" onchange="updateColEnd(' + i + ', this.value)">';
-    html += '<button class="fw-del-col" onclick="removeFixedWidthColumn(' + i + ')" title="Delete column" style="margin-left:auto;">\u00D7</button>';
-    html += '</div>';
-  }
+  html += '<div id="fw-col-defs" style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.75rem;"></div>';
   html += '</div>';
   return html;
 }
@@ -419,25 +404,69 @@ function updatePreview() {
 }
 
 function updateDelimiterPreview(container) {
-  var html = '<div style="background:var(--surface-2);border-radius:var(--radius);padding:0.5rem;font-family:monospace;font-size:0.75rem;line-height:1.6;max-height:400px;overflow-y:auto;">';
   var delim = currentConfig.delimiter;
-  cachedPreviewLines.forEach(function(line) {
-    var cells = line.split(delim);
-    html += '<div style="display:flex;gap:2px;border-bottom:0.0625rem solid var(--border);padding:0.15rem 0;">';
-    cells.forEach(function(cell) {
-      html += '<span style="flex:1;min-width:80px;padding:0 0.25rem;border-right:1px solid var(--primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(cell) + '</span>';
-    });
-    html += '</div>';
-  });
-  html += '</div>';
+  var numCols = cachedPreviewLines.length > 0 ? cachedPreviewLines[0].split(delim).length : 0;
 
-  var numCols = cachedPreviewLines.length > 0 ? cachedPreviewLines[0].split(currentConfig.delimiter).length : 0;
+  // Sync columns
   if (currentConfig.columns.length !== numCols) {
     currentConfig.columns = [];
     for (var i = 0; i < numCols; i++) {
       currentConfig.columns.push({name: 'col' + i, type: 'VARCHAR'});
     }
   }
+
+  // Compute inline distribution data from preview lines
+  var distData = [];
+  for (var ci = 0; ci < numCols; ci++) {
+    var freq = {};
+    var total = 0;
+    cachedPreviewLines.forEach(function(line) {
+      var cells = line.split(delim);
+      if (cells[ci] !== undefined) {
+        var v = cells[ci].trim();
+        freq[v] = (freq[v] || 0) + 1;
+        total++;
+      }
+    });
+    var entries = Object.entries(freq).sort(function(a,b) { return b[1] - a[1]; }).slice(0, 5);
+    var topTotal = entries.reduce(function(s, e) { return s + e[1]; }, 0);
+    distData.push({entries: entries, total: total, topPct: total > 0 ? topTotal / total * 100 : 0});
+  }
+
+  var html = '<div style="background:var(--surface-2);border-radius:var(--radius);padding:0.5rem;font-family:monospace;font-size:0.75rem;line-height:1.6;max-height:400px;overflow-y:auto;">';
+
+  // Column headers with inline distribution bars
+  html += '<div style="display:flex;gap:2px;margin-bottom:0.25rem;">';
+  for (var ci = 0; ci < numCols; ci++) {
+    var col = currentConfig.columns[ci];
+    html += '<div style="flex:1;min-width:80px;padding:0 0.25rem;">';
+    // Column name + type badge
+    html += '<div style="font-size:0.7rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(col.name) + ' <span style="color:var(--text-muted);font-weight:400;">' + col.type + '</span></div>';
+    // Distribution bar
+    if (distData[ci] && distData[ci].entries.length) {
+      html += '<div style="display:flex;gap:1px;height:6px;margin-top:2px;border-radius:2px;overflow:hidden;">';
+      distData[ci].entries.forEach(function(e) {
+        var pct = distData[ci].total > 0 ? (e[1] / distData[ci].total * 100) : 0;
+        html += '<div style="height:100%;width:' + pct + '%;background:' + (typeof PANEL_COLORS !== 'undefined' ? PANEL_COLORS[ci % PANEL_COLORS.length] : '#0065FF') + ';" title="' + (e[0] ? e[0].replace(/"/g,'&quot;').replace(/&/g,'&amp;') : '') + ': ' + e[1] + '"></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Data rows
+  cachedPreviewLines.forEach(function(line) {
+    var cells = line.split(delim);
+    html += '<div style="display:flex;gap:2px;border-bottom:0.0625rem solid var(--border);padding:0.15rem 0;">';
+    cells.forEach(function(cell, ci) {
+      html += '<span style="flex:1;min-width:80px;padding:0 0.25rem;border-right:1px solid var(--primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(cell) + '</span>';
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // Column editor below
   html += '<div style="margin-top:0.75rem;"><h4 style="font-size:0.85rem;margin-bottom:0.5rem;">Column Names & Types</h4>';
   html += '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">';
   currentConfig.columns.forEach(function(col, idx) {
@@ -451,6 +480,7 @@ function updateDelimiterPreview(container) {
     html += '</div>';
   });
   html += '</div></div>';
+
   container.innerHTML = html;
 }
 
@@ -461,6 +491,18 @@ function updateFixedWidthPreview(container) {
   }
 
   var html = '<div style="background:var(--surface-2);border-radius:var(--radius);padding:0.5rem;font-family:monospace;font-size:0.75rem;line-height:1.6;max-height:400px;overflow-y:auto;">';
+
+  // Column headers
+  html += '<div style="display:flex;gap:2px;margin-bottom:0.25rem;">';
+  for (var ci = 0; ci < currentConfig.columns.length; ci++) {
+    var col = currentConfig.columns[ci];
+    html += '<div style="flex:1;min-width:60px;padding:0 0.25rem;">';
+    html += '<div style="font-size:0.7rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(col.name) + ' <span style="color:var(--text-muted);font-weight:400;">' + col.type + '</span></div>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Data rows
   cachedPreviewLines.forEach(function(line) {
     html += '<div style="display:flex;gap:2px;border-bottom:0.0625rem solid var(--border);padding:0.15rem 0;">';
     for (var i = 0; i < currentConfig.columns.length; i++) {
