@@ -19,6 +19,7 @@ import (
 	"github.com/esignoretti/ds3-sql-server/internal/analysis"
 	"github.com/esignoretti/ds3-sql-server/internal/api"
 	"github.com/esignoretti/ds3-sql-server/internal/auth"
+	"github.com/esignoretti/ds3-sql-server/internal/column"
 	"github.com/esignoretti/ds3-sql-server/internal/config"
 	"github.com/esignoretti/ds3-sql-server/internal/convert"
 	"github.com/esignoretti/ds3-sql-server/internal/query"
@@ -90,12 +91,24 @@ func main() {
 	}
 	reportHandler := api.NewReportHandler(reportStore)
 
+	// Column config store
+	columnDir := os.Getenv("DS3SQL_COLUMN_DIR")
+	if columnDir == "" {
+		home, _ := os.UserHomeDir()
+		columnDir = home + "/.ds3sql/columns"
+	}
+	columnStore, err := column.NewStore(columnDir)
+	if err != nil {
+		log.Fatalf("failed to init column store: %v", err)
+	}
+	columnHandler := api.NewColumnHandler(columnStore)
+
 	// Conversion engine
 	workers := 4
 	if cfg.Query.PoolSize < workers {
 		workers = cfg.Query.PoolSize
 	}
-	convertEngine := convert.NewEngine(queryEngine.Pool(), workers)
+	convertEngine := convert.NewEngine(queryEngine.Pool(), workers, columnStore)
 	convertHandler := api.NewConvertHandler(convertEngine)
 
 	// Periodic job store cleanup (runs until process exits)
@@ -192,6 +205,10 @@ func main() {
 		r.Delete("/api/reports/{id}", reportHandler.Delete)
 		r.Post("/convert", convertHandler.Start)
 		r.Get("/convert/status/{id}", convertHandler.Status)
+		r.Get("/convert/preview", columnHandler.Preview)
+		r.Get("/convert/columns", columnHandler.ListConfigs)
+		r.Post("/convert/columns", columnHandler.SaveConfig)
+		r.Delete("/convert/columns/{bucket}/{pattern}", columnHandler.DeleteConfig)
 	})
 
 	// Web UI
