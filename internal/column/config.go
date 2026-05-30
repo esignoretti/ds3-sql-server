@@ -18,15 +18,16 @@ type ColumnDef struct {
 }
 
 type ColumnConfig struct {
-	Bucket    string       `json:"bucket"`
-	Pattern   string       `json:"pattern"`
-	Mode      string       `json:"mode"`
-	Delimiter string       `json:"delimiter"`
-	Quote     string       `json:"quote"`
-	HeaderRow bool         `json:"header_row"`
-	Columns   []ColumnDef  `json:"columns"`
-	CreatedAt time.Time    `json:"created_at"`
-	UpdatedAt time.Time    `json:"updated_at"`
+	Bucket      string       `json:"bucket"`
+	Pattern     string       `json:"pattern"`
+	ProfileName string       `json:"profile_name,omitempty"`
+	Mode        string       `json:"mode"`
+	Delimiter   string       `json:"delimiter"`
+	Quote       string       `json:"quote"`
+	HeaderRow   bool         `json:"header_row"`
+	Columns     []ColumnDef  `json:"columns"`
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
 }
 
 type Store struct {
