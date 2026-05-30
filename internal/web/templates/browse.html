@@ -594,6 +594,124 @@ function renderAnalyticsPanel() {
   renderPanelCharts();
 }
 
+function renderMultiColumnPanel() {
+  var html = '';
+
+  // Header
+  html += '<div class="apanel-header">';
+  var names = panelState.selectedCols.map(function(c) { return c.name; });
+  html += '<h3>' + names.length + ' columns selected</h3>';
+  html += '<button class="apanel-close" onclick="closeAnalyticsPanel()">\u00D7</button>';
+  html += '</div>';
+
+  // Column tag selector
+  html += '<div class="apanel-col-list">';
+  for (var i = 0; i < panelState.selectedCols.length; i++) {
+    var c = panelState.selectedCols[i];
+    html += '<span class="apanel-col-tag active" onclick="toggleMultiCol(' + i + ')">' + escHtml(c.name) + ' <span class="remove-col" onclick="event.stopPropagation(); removeMultiCol(' + i + ')">\u00D7</span></span>';
+  }
+  html += '</div>';
+
+  // Overlaid distributions chart
+  html += '<div id="apanel-chart" class="apanel-chart-wrap multi">';
+  if (panelState.analysisCache) {
+    var hasData = false;
+    for (var i = 0; i < panelState.selectedCols.length; i++) {
+      if (panelState.analysisCache.columns[panelState.selectedCols[i].name]) hasData = true;
+    }
+    if (hasData) {
+      html += '<div class="chart-canvas-wrapper"><canvas id="apanel-canvas-multi"></canvas></div>';
+    } else {
+      html += '<div class="apanel-loading">Loading overlaid distributions...</div>';
+    }
+  } else {
+    html += '<div class="apanel-loading">Loading overlaid distributions...</div>';
+  }
+  html += '</div>';
+
+  // Correlation matrix
+  var numCols = panelState.selectedCols.filter(function(c) {
+    var t = getColType(c.name).toUpperCase();
+    return /INT|FLOAT|DOUBLE|DECIMAL|NUMERIC/.test(t);
+  });
+  if (numCols.length >= 2 && panelState.analysisCache && panelState.analysisCache.correlations) {
+    html += '<div class="apanel-corr">';
+    html += '<h4>Correlation Matrix (Pearson)</h4>';
+    html += buildCorrelationMatrix(numCols);
+    html += '</div>';
+  }
+
+  return html;
+}
+
+function toggleMultiCol(idx) {
+  renderMultiColumnCharts();
+}
+
+function removeMultiCol(idx) {
+  panelState.selectedCols.splice(idx, 1);
+  if (panelState.selectedCols.length <= 1) {
+    if (panelState.selectedCols.length === 1) {
+      renderAnalyticsPanel();
+    } else {
+      closeAnalyticsPanel();
+    }
+    return;
+  }
+  renderAnalyticsPanel();
+}
+
+function buildCorrelationMatrix(cols) {
+  var names = cols.map(function(c) { return c.name; });
+  var n = names.length;
+  var html = '<div class="corr-grid" style="grid-template-columns:auto repeat(' + n + ', 1fr);gap:2px;">';
+
+  // Header row
+  html += '<div class="corr-cell header"></div>';
+  for (var j = 0; j < n; j++) {
+    html += '<div class="corr-cell header" style="font-size:0.7rem;">' + escHtml(names[j]) + '</div>';
+  }
+
+  // Data rows
+  for (var i = 0; i < n; i++) {
+    html += '<div class="corr-cell header" style="font-size:0.7rem;">' + escHtml(names[i]) + '</div>';
+    for (var j = 0; j < n; j++) {
+      if (i === j) {
+        html += '<div class="corr-cell diag">1.00</div>';
+      } else {
+        var corr = findCorrelation(names[i], names[j]);
+        if (corr !== null) {
+          var cls = corr > 0.1 ? 'pos' : (corr < -0.1 ? 'neg' : 'neutral');
+          var intensity = Math.min(Math.abs(corr) * 0.8 + 0.1, 0.9);
+          var bg = '';
+          if (corr > 0.1) {
+            bg = 'background:rgba(0,101,255,' + intensity + ');';
+          } else if (corr < -0.1) {
+            bg = 'background:rgba(248,113,113,' + intensity + ');';
+          }
+          html += '<div class="corr-cell ' + cls + '" style="' + bg + '">' + corr.toFixed(2) + '</div>';
+        } else {
+          html += '<div class="corr-cell na">\u2014</div>';
+        }
+      }
+    }
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function findCorrelation(colA, colB) {
+  if (!panelState.analysisCache || !panelState.analysisCache.correlations) return null;
+  for (var i = 0; i < panelState.analysisCache.correlations.length; i++) {
+    var c = panelState.analysisCache.correlations[i];
+    if ((c.col_a === colA && c.col_b === colB) || (c.col_a === colB && c.col_b === colA)) {
+      return c.value;
+    }
+  }
+  return null;
+}
+
 function renderSingleColumnPanel() {
   var col = panelState.selectedCols[0];
   var colDef = lastResult.columns[col.idx];
@@ -987,6 +1105,122 @@ function buildTemporalChart(analysis, col) {
       }
     }
   };
+}
+
+function renderMultiColumnCharts() {
+  var canvas = document.getElementById('apanel-canvas-multi');
+  if (!canvas || !panelState.analysisCache) return;
+
+  var ctx = canvas.getContext('2d');
+  if (canvas._chart) { canvas._chart.destroy(); }
+
+  var activeCols = panelState.selectedCols;
+  var datasets = [];
+  var allLabels = [];
+
+  // Determine if all selected cols are numeric (for histograms) or mixed
+  var allNumeric = activeCols.every(function(c) {
+    var t = getColType(c.name).toUpperCase();
+    return /INT|FLOAT|DOUBLE|DECIMAL|NUMERIC/.test(t);
+  });
+
+  if (allNumeric) {
+    // Overlaid normalized histograms
+    var allBins = [];
+    var maxCount = 0;
+    for (var i = 0; i < activeCols.length; i++) {
+      var analysis = panelState.analysisCache.columns[activeCols[i].name];
+      if (!analysis || !analysis.histogram || !analysis.histogram.length) continue;
+      var bins = analysis.histogram;
+      var total = bins.reduce(function(s, b) { return s + b.count; }, 0);
+      var normalized = bins.map(function(b) { return total > 0 ? b.count / total : 0; });
+      var labels = bins.map(function(b) { return b.bin_start.toFixed(1) + '-' + b.bin_end.toFixed(1); });
+      if (labels.length > allLabels.length) allLabels = labels;
+      allBins.push({name: activeCols[i].name, data: normalized, bins: bins});
+      normalized.forEach(function(v) { if (v > maxCount) maxCount = v; });
+    }
+
+    datasets = allBins.map(function(b, i) {
+      // Pad data to match allLabels length
+      var padded = new Array(allLabels.length).fill(0);
+      for (var j = 0; j < b.data.length && j < allLabels.length; j++) {
+        padded[j] = b.data[j];
+      }
+      return {
+        label: b.name,
+        data: padded,
+        backgroundColor: PANEL_COLORS[i % PANEL_COLORS.length] + '66',
+        borderColor: PANEL_COLORS[i % PANEL_COLORS.length],
+        borderWidth: 1,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0
+      };
+    });
+
+    canvas._chart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: allLabels, datasets: datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#DEE4EA', font: { size: 9 } } },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                return ctx.dataset.label + ': ' + (ctx.parsed.y * 100).toFixed(1) + '%';
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: '#9099A1', font: { size: 8 } }, grid: { color: '#31393F' } },
+          y: {
+            ticks: { color: '#9099A1', font: { size: 8 }, callback: function(v) { return (v * 100).toFixed(0) + '%'; } },
+            grid: { color: '#31393F' },
+            beginAtZero: true
+          }
+        },
+        elements: { point: { radius: 0 } }
+      }
+    });
+  } else {
+    // Mixed or categorical: grouped bar chart
+    var categories = {};
+    for (var i = 0; i < activeCols.length; i++) {
+      var analysis = panelState.analysisCache.columns[activeCols[i].name];
+      if (!analysis || !analysis.top_values) continue;
+      var topVals = analysis.top_values.slice(0, 5);
+      topVals.forEach(function(v) {
+        if (!categories[v.value]) categories[v.value] = {};
+        categories[v.value][activeCols[i].name] = v.count;
+      });
+    }
+
+    allLabels = Object.keys(categories).slice(0, 10);
+    datasets = activeCols.map(function(c, i) {
+      return {
+        label: c.name,
+        data: allLabels.map(function(l) { return categories[l] && categories[l][c.name] ? categories[l][c.name] : 0; }),
+        backgroundColor: PANEL_COLORS[i % PANEL_COLORS.length]
+      };
+    });
+
+    canvas._chart = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: allLabels, datasets: datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#DEE4EA', font: { size: 9 } } } },
+        scales: {
+          x: { ticks: { color: '#9099A1', font: { size: 8 } }, grid: { color: '#31393F' } },
+          y: { ticks: { color: '#9099A1', font: { size: 8 } }, grid: { color: '#31393F' }, beginAtZero: true }
+        }
+      }
+    });
+  }
 }
 
 function fetchAnalysis() {
