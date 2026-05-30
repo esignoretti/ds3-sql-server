@@ -1,0 +1,26 @@
+{{define "column_config"}}
+<div class="single-page">
+  <div class="top-bar">
+    <span id="config-breadcrumb" style="font-size:0.95rem;font-weight:600;">Column Configuration</span>
+  </div>
+
+  <div id="config-app">
+    <p style="color:var(--text-muted);">Loading...</p>
+  </div>
+</div>
+
+<script src="/static/column_config.js"></script>
+<script>
+var urlParams = new URLSearchParams(window.location.search);
+var bucket = urlParams.get('bucket');
+var file = urlParams.get('file');
+var projectId = urlParams.get('project');
+
+if (!bucket || !file) {
+  document.getElementById('config-app').innerHTML = '<p style="color:var(--text-muted);">No file selected. <a href="/browse">Browse buckets</a> and click Configure.</p>';
+} else {
+  selProject = projectId || '';
+  loadPreview(bucket, file);
+}
+</script>
+{{end}}

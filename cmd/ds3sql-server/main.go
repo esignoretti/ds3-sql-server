@@ -231,6 +231,7 @@ func main() {
 		r.Get("/query", webHandler.QueryPage)
 		r.Get("/report", webHandler.ReportPage)
 		r.Get("/reports", webHandler.ReportsPage)
+		r.Get("/column-config", webHandler.ColumnConfigPage)
 	})
 
 	srv := &http.Server{

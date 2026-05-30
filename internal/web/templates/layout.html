@@ -33,6 +33,7 @@
             {{if eq .Page "browse"}}{{template "browse" .}}
             {{else if eq .Page "query"}}{{template "query" .}}
             {{else if eq .Page "report"}}{{template "report" .}}
+            {{else if eq .Page "column_config"}}{{template "column_config" .}}
             {{else if eq .Page "reports"}}{{template "reports_list" .}}
             {{else}}{{template "browse" .}}{{end}}
         </main>

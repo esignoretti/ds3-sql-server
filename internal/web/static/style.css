@@ -326,5 +326,8 @@ tbody tr:hover {
   .chart-card { break-inside:avoid; }
 }
 
+.config-layout { display:flex; flex-direction:column; gap:1rem; }
+.config-layout .card { background:var(--surface); border:0.0625rem solid var(--border); border-radius:var(--radius); padding:1rem; }
+.config-layout .card h3 { font-size:1rem; margin-bottom:0.25rem; }
 .convert-item:hover { background:var(--surface-2); border-radius:var(--radius); }
 .convert-progress { margin-top:1rem; }
