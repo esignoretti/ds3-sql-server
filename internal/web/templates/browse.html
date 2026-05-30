@@ -467,6 +467,58 @@ function closeAnalyticsPanel() {
   panelState.selectedCols = [];
 }
 
+function computeQuickStats(colIdx) {
+  var rows = lastResult.rows;
+  var total = rows.length;
+  var nullCount = 0;
+  var distinct = new Set();
+  var sum = 0;
+  var numericCount = 0;
+  var min = Infinity;
+  var max = -Infinity;
+  var topFreq = {};
+
+  for (var i = 0; i < rows.length; i++) {
+    var v = rows[i][colIdx];
+    if (v === null || v === undefined) {
+      nullCount++;
+      continue;
+    }
+    var sv = String(v);
+    distinct.add(sv);
+    topFreq[sv] = (topFreq[sv] || 0) + 1;
+
+    if (typeof v === 'number') {
+      sum += v;
+      numericCount++;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    } else if (!isNaN(parseFloat(v))) {
+      var n = parseFloat(v);
+      sum += n;
+      numericCount++;
+      if (n < min) min = n;
+      if (n > max) max = n;
+    }
+  }
+
+  // Top 3 values
+  var topEntries = Object.entries(topFreq).sort(function(a,b) { return b[1] - a[1]; }).slice(0, 3);
+  var topVals = topEntries.map(function(e) { return e[0] + ' (' + e[1] + ')'; });
+
+  return {
+    total: total,
+    nullCount: nullCount,
+    nullPct: total > 0 ? (nullCount / total * 100).toFixed(1) : '0.0',
+    distinct: distinct.size,
+    isNumeric: numericCount > 0,
+    min: numericCount > 0 ? min : null,
+    max: numericCount > 0 ? max : null,
+    mean: numericCount > 0 ? (sum / numericCount).toFixed(2) : null,
+    topValues: topVals
+  };
+}
+
 function fetchAnalysis() {
   if (!lastResult || panelState.fetchingAnalysis) return;
   panelState.fetchingAnalysis = true;
