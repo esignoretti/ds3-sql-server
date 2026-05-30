@@ -2,6 +2,8 @@ package s3
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -44,4 +46,15 @@ func (c *Client) DeleteObject(ctx context.Context, bucket, key string) error {
 		Key:    &key,
 	})
 	return err
+}
+
+func (c *Client) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+	out, err := c.client.GetObject(ctx, &awss3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get object: %w", err)
+	}
+	return out.Body, nil
 }
