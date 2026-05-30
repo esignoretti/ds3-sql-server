@@ -519,6 +519,61 @@ function computeQuickStats(colIdx) {
   };
 }
 
+function selectRepresentativeRows(colIdx, maxRows) {
+  maxRows = maxRows || 8;
+  var rows = lastResult.rows;
+  var indices = [];
+  var selected = [];
+  var used = new Set();
+
+  // 1. Null rows (up to 3)
+  for (var i = 0; i < rows.length && selected.length < maxRows; i++) {
+    if (rows[i][colIdx] === null || rows[i][colIdx] === undefined) {
+      if (!used.has(i)) { used.add(i); selected.push(i); }
+    }
+  }
+
+  // 2. Outliers for numeric columns (z-score > 2)
+  var vals = [];
+  for (var i = 0; i < rows.length; i++) {
+    var v = rows[i][colIdx];
+    if (v !== null && v !== undefined && !isNaN(parseFloat(v))) {
+      vals.push({idx: i, val: parseFloat(v)});
+    }
+  }
+  if (vals.length > 3) {
+    var sum = vals.reduce(function(s, x) { return s + x.val; }, 0);
+    var mean = sum / vals.length;
+    var sqDiff = vals.reduce(function(s, x) { return s + (x.val - mean) * (x.val - mean); }, 0);
+    var stddev = Math.sqrt(sqDiff / vals.length);
+    if (stddev > 0) {
+      for (var i = 0; i < vals.length && selected.length < maxRows; i++) {
+        var z = Math.abs((vals[i].val - mean) / stddev);
+        if (z > 2 && !used.has(vals[i].idx)) {
+          used.add(vals[i].idx);
+          selected.push(vals[i].idx);
+        }
+      }
+    }
+  }
+
+  // 3. Random fill
+  var remaining = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (!used.has(i)) remaining.push(i);
+  }
+  // Shuffle
+  for (var i = remaining.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = remaining[i]; remaining[i] = remaining[j]; remaining[j] = tmp;
+  }
+  for (var i = 0; i < remaining.length && selected.length < maxRows; i++) {
+    selected.push(remaining[i]);
+  }
+
+  return selected.sort(function(a,b) { return a - b; });
+}
+
 function fetchAnalysis() {
   if (!lastResult || panelState.fetchingAnalysis) return;
   panelState.fetchingAnalysis = true;
