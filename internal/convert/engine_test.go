@@ -26,6 +26,12 @@ func TestDetectFormat(t *testing.T) {
 	}
 }
 
+func TestFixedWidthReadSQL(t *testing.T) {
+	if detectFormat("test.dat") != "text" {
+		t.Error("expected text for .dat")
+	}
+}
+
 func TestConvertibleExt(t *testing.T) {
 	if convertibleExt(".parquet") {
 		t.Error(".parquet should not be convertible")

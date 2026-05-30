@@ -202,22 +202,49 @@ func (e *Engine) convertFile(file, bucket, endpoint, accessKey, secretKey string
 	var readSQL string
 	if savedCfg != nil {
 		cfg := savedCfg
-		delim := cfg.Delimiter
-		quote := cfg.Quote
-		headerStr := "FALSE"
-		if cfg.HeaderRow {
-			headerStr = "TRUE"
-		}
-		if len(cfg.Columns) > 0 {
+		if cfg.Mode == "fixed_width" {
+			if len(cfg.Columns) == 0 {
+				return fmt.Errorf("fixed_width mode requires at least one column")
+			}
 			var selects []string
 			for i, col := range cfg.Columns {
-				selects = append(selects, fmt.Sprintf("CAST(column%d AS %s) AS %s", i, col.Type, col.Name))
+				colName := col.Name
+				if colName == "" {
+					colName = fmt.Sprintf("col%d", i)
+				}
+				colType := col.Type
+				if colType == "" {
+					colType = "VARCHAR"
+				}
+				start := 0
+				if col.Start != nil {
+					start = *col.Start
+				}
+				if col.End != nil {
+					selects = append(selects, fmt.Sprintf("CAST(substr(text, %d, %d) AS %s) AS \"%s\"", start+1, *col.End-start, colType, strings.ReplaceAll(colName, "\"", "\"\"")))
+				} else {
+					selects = append(selects, fmt.Sprintf("CAST(substr(text, %d) AS %s) AS \"%s\"", start+1, colType, strings.ReplaceAll(colName, "\"", "\"\"")))
+				}
 			}
-			readSQL = fmt.Sprintf(`SELECT %s FROM read_csv('%s', DELIM='%s', QUOTE='%s', HEADER=%s, all_varchar=true, ignore_errors=true, null_padding=true)`,
-				strings.Join(selects, ","), s3Path, delim, quote, headerStr)
+			readSQL = fmt.Sprintf(`SELECT %s FROM read_text('%s')`, strings.Join(selects, ","), s3Path)
 		} else {
-			readSQL = fmt.Sprintf(`SELECT * FROM read_csv('%s', DELIM='%s', QUOTE='%s', HEADER=%s, all_varchar=true, ignore_errors=true, null_padding=true)`,
-				s3Path, delim, quote, headerStr)
+			delim := cfg.Delimiter
+			quote := cfg.Quote
+			headerStr := "FALSE"
+			if cfg.HeaderRow {
+				headerStr = "TRUE"
+			}
+			if len(cfg.Columns) > 0 {
+				var selects []string
+				for i, col := range cfg.Columns {
+					selects = append(selects, fmt.Sprintf("CAST(column%d AS %s) AS %s", i, col.Type, col.Name))
+				}
+				readSQL = fmt.Sprintf(`SELECT %s FROM read_csv('%s', DELIM='%s', QUOTE='%s', HEADER=%s, all_varchar=true, ignore_errors=true, null_padding=true)`,
+					strings.Join(selects, ","), s3Path, delim, quote, headerStr)
+			} else {
+				readSQL = fmt.Sprintf(`SELECT * FROM read_csv('%s', DELIM='%s', QUOTE='%s', HEADER=%s, all_varchar=true, ignore_errors=true, null_padding=true)`,
+					s3Path, delim, quote, headerStr)
+			}
 		}
 	} else {
 		f := detectFormat(file)
