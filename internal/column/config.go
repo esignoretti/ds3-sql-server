@@ -11,13 +11,16 @@ import (
 )
 
 type ColumnDef struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Start *int   `json:"start,omitempty"`
+	End   *int   `json:"end,omitempty"`
 }
 
 type ColumnConfig struct {
 	Bucket    string       `json:"bucket"`
 	Pattern   string       `json:"pattern"`
+	Mode      string       `json:"mode"`
 	Delimiter string       `json:"delimiter"`
 	Quote     string       `json:"quote"`
 	HeaderRow bool         `json:"header_row"`
@@ -119,10 +122,12 @@ func (s *Store) Match(bucket, filename string) *ColumnConfig {
 	sort.Slice(configs, func(i, j int) bool {
 		return len(configs[i].Pattern) > len(configs[j].Pattern)
 	})
-	base := filepath.Base(filename)
 	for _, cfg := range configs {
-		matched, _ := filepath.Match(cfg.Pattern, base)
-		if matched {
+		if matched, _ := filepath.Match(cfg.Pattern, filename); matched {
+			return &cfg
+		}
+		base := filepath.Base(filename)
+		if matched, _ := filepath.Match(cfg.Pattern, base); matched {
 			return &cfg
 		}
 	}
