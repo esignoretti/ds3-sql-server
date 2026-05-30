@@ -251,7 +251,9 @@ function renderPage() {
   var end = Math.min(start + pageSize, d.rows.length);
 
   var h = '<table><thead><tr>';
-  d.columns.forEach(function(c) { h += '<th>' + c.name + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + c.type + '</span></th>'; });
+  d.columns.forEach(function(c, ci) {
+    h += '<th onclick="openAnalyticsPanel(\'' + escAttr(c.name) + '\',' + ci + ')" style="cursor:pointer;user-select:none;" title="Click for column analytics">' + c.name + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + c.type + '</span></th>';
+  });
   h += '</tr></thead><tbody>';
   for (var i = start; i < end; i++) {
     h += '<tr>';
@@ -432,6 +434,66 @@ function fmtSize(b) {
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escJs(s) { return s.replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+function openAnalyticsPanel(colName, colIdx) {
+  if (!lastResult || !lastResult.columns) return;
+  var isMulti = window.event && window.event.ctrlKey;
+
+  if (!isMulti) {
+    panelState.selectedCols = [{name: colName, idx: colIdx}];
+  } else {
+    var existing = panelState.selectedCols.findIndex(function(c) { return c.name === colName; });
+    if (existing >= 0) {
+      panelState.selectedCols.splice(existing, 1);
+      if (!panelState.selectedCols.length) { closeAnalyticsPanel(); return; }
+    } else {
+      panelState.selectedCols.push({name: colName, idx: colIdx});
+    }
+  }
+
+  renderAnalyticsPanel();
+  document.getElementById('analytics-backdrop').classList.add('visible');
+  document.getElementById('analytics-panel').classList.add('open');
+
+  // Fetch server analysis if not cached
+  if (!panelState.analysisCache) {
+    fetchAnalysis();
+  }
+}
+
+function closeAnalyticsPanel() {
+  document.getElementById('analytics-backdrop').classList.remove('visible');
+  document.getElementById('analytics-panel').classList.remove('open');
+  panelState.selectedCols = [];
+}
+
+function fetchAnalysis() {
+  if (!lastResult) return;
+  var statusEl = document.getElementById('query-status');
+  var chartWrap = document.getElementById('apanel-chart');
+  if (chartWrap) chartWrap.innerHTML = '<div class="apanel-loading">Loading histogram...</div>';
+
+  fetch('/analyze', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      columns: lastResult.columns,
+      rows: lastResult.rows
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) {
+      if (chartWrap) chartWrap.innerHTML = '<div class="apanel-loading" style="color:var(--red);">Analysis error: ' + escHtml(d.error) + '</div>';
+      return;
+    }
+    panelState.analysisCache = d;
+    renderAnalyticsPanel();
+  })
+  .catch(function(e) {
+    if (chartWrap) chartWrap.innerHTML = '<div class="apanel-loading" style="color:var(--red);">Error: ' + e.message + '</div>';
+  });
+}
 
 // --- Analytics Panel State ---
 var panelState = {
