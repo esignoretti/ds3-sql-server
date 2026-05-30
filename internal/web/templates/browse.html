@@ -252,7 +252,7 @@ function renderPage() {
 
   var h = '<table><thead><tr>';
   d.columns.forEach(function(c, ci) {
-    h += '<th onclick="openAnalyticsPanel(\'' + escAttr(c.name) + '\',' + ci + ')" style="cursor:pointer;user-select:none;" title="Click for column analytics">' + c.name + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + c.type + '</span></th>';
+    h += '<th onclick="openAnalyticsPanel(\'' + escJs(c.name) + '\',' + ci + ', event)" style="cursor:pointer;user-select:none;" title="Click for column analytics">' + c.name + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + c.type + '</span></th>';
   });
   h += '</tr></thead><tbody>';
   for (var i = start; i < end; i++) {
@@ -435,9 +435,9 @@ function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 function escJs(s) { return s.replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
-function openAnalyticsPanel(colName, colIdx) {
+function openAnalyticsPanel(colName, colIdx, evt) {
   if (!lastResult || !lastResult.columns) return;
-  var isMulti = window.event && window.event.ctrlKey;
+  var isMulti = evt && evt.ctrlKey;
 
   if (!isMulti) {
     panelState.selectedCols = [{name: colName, idx: colIdx}];
@@ -468,8 +468,8 @@ function closeAnalyticsPanel() {
 }
 
 function fetchAnalysis() {
-  if (!lastResult) return;
-  var statusEl = document.getElementById('query-status');
+  if (!lastResult || panelState.fetchingAnalysis) return;
+  panelState.fetchingAnalysis = true;
   var chartWrap = document.getElementById('apanel-chart');
   if (chartWrap) chartWrap.innerHTML = '<div class="apanel-loading">Loading histogram...</div>';
 
@@ -483,6 +483,7 @@ function fetchAnalysis() {
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
+    panelState.fetchingAnalysis = false;
     if (d.error) {
       if (chartWrap) chartWrap.innerHTML = '<div class="apanel-loading" style="color:var(--red);">Analysis error: ' + escHtml(d.error) + '</div>';
       return;
@@ -491,6 +492,7 @@ function fetchAnalysis() {
     renderAnalyticsPanel();
   })
   .catch(function(e) {
+    panelState.fetchingAnalysis = false;
     if (chartWrap) chartWrap.innerHTML = '<div class="apanel-loading" style="color:var(--red);">Error: ' + e.message + '</div>';
   });
 }
@@ -498,7 +500,8 @@ function fetchAnalysis() {
 // --- Analytics Panel State ---
 var panelState = {
   selectedCols: [],
-  analysisCache: null  // cached /analyze response
+  analysisCache: null,  // cached /analyze response
+  fetchingAnalysis: false
 };
 var PANEL_COLORS = ['#0065FF','#27B681','#F3B356','#8739B1','#f87171','#06b6d4','#a78bfa','#fb923c','#34d399','#f472b6'];
 
