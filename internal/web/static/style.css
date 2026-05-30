@@ -331,3 +331,125 @@ tbody tr:hover {
 .config-layout .card h3 { font-size:1rem; margin-bottom:0.25rem; }
 .convert-item:hover { background:var(--surface-2); border-radius:var(--radius); }
 .convert-progress { margin-top:1rem; }
+
+/* Fixed-width column config */
+.fw-ruler-wrap {
+  overflow-x: auto;
+  margin-top: 0.5rem;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 0.5rem 0;
+  position: relative;
+}
+.fw-ruler-line {
+  font-family: monospace;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  white-space: pre;
+  letter-spacing: 0;
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  padding: 0 0.5rem;
+}
+.fw-ruler-ticks {
+  font-family: monospace;
+  font-size: 0.65rem;
+  line-height: 1;
+  white-space: pre;
+  color: var(--text-muted);
+  padding: 0 0.5rem;
+}
+.seg-0 { background: rgba(0,101,255,0.15); }
+.seg-1 { background: rgba(135,57,177,0.15); }
+.seg-2 { background: rgba(39,182,129,0.15); }
+.seg-3 { background: rgba(243,179,86,0.15); }
+.seg-4 { background: rgba(248,113,113,0.15); }
+.seg-5 { background: rgba(0,200,200,0.15); }
+.seg-6 { background: rgba(255,165,0,0.15); }
+.seg-7 { background: rgba(180,130,255,0.15); }
+.fw-split-marker {
+  display: inline-block;
+  width: 0;
+  position: relative;
+  cursor: pointer;
+}
+.fw-split-marker::after {
+  content: "│";
+  color: var(--primary);
+  font-weight: bold;
+  position: absolute;
+  left: -2px;
+  top: -0.1em;
+}
+.fw-split-marker:hover::after {
+  color: var(--red);
+}
+.fw-pos-inputs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+.fw-pos-inputs .fw-col-group {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  background: var(--surface-2);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius);
+}
+.fw-pos-inputs input[type="number"] {
+  width: 60px;
+  background: var(--surface);
+  color: var(--text);
+  border: 0.0625rem solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.25rem;
+  font-size: 0.8rem;
+  font-family: monospace;
+}
+.fw-del-col {
+  cursor: pointer;
+  color: var(--red);
+  font-weight: bold;
+  border: none;
+  background: none;
+  font-size: 1rem;
+  line-height: 1;
+}
+.fw-del-col:hover {
+  color: #ff4444;
+}
+.fw-add-col {
+  margin-top: 0.5rem;
+}
+/* Mode toggle pills */
+.mode-toggle {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0.75rem;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 0.0625rem solid var(--border);
+  width: fit-content;
+}
+.mode-toggle button {
+  padding: 0.4rem 1rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: "Source Sans 3", Arial, sans-serif;
+  transition: all 0.15s;
+}
+.mode-toggle button.active {
+  background: var(--primary);
+  color: white;
+}
+.mode-toggle button:not(.active):hover {
+  background: var(--surface);
+  color: var(--text);
+}
