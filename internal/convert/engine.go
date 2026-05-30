@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/esignoretti/ds3-sql-server/internal/column"
 	"github.com/esignoretti/ds3-sql-server/internal/s3"
 	"github.com/google/uuid"
 )
@@ -22,12 +23,13 @@ type ConvertRequest struct {
 }
 
 type Engine struct {
-	pool    chan *sql.DB
-	workers int
-	jobs    *JobStore
+	pool     chan *sql.DB
+	workers  int
+	jobs     *JobStore
+	colStore *column.Store
 }
 
-func NewEngine(pool chan *sql.DB, workers int) *Engine {
+func NewEngine(pool chan *sql.DB, workers int, colStore *column.Store) *Engine {
 	poolSize := cap(pool)
 	if workers < 1 {
 		workers = 1
@@ -36,9 +38,10 @@ func NewEngine(pool chan *sql.DB, workers int) *Engine {
 		workers = poolSize
 	}
 	return &Engine{
-		pool:    pool,
-		workers: workers,
-		jobs:    NewJobStore(),
+		pool:     pool,
+		workers:  workers,
+		jobs:     NewJobStore(),
+		colStore: colStore,
 	}
 }
 
@@ -192,16 +195,40 @@ func (e *Engine) convertFile(file, bucket, endpoint, accessKey, secretKey string
 
 	s3Path := "s3://" + bucket + "/" + file
 	outputPath := "s3://" + bucket + "/" + file + ".parquet"
-	f := detectFormat(file)
+
+	// Check for saved column config first
+	savedCfg := e.colStore.Match(bucket, file)
 
 	var readSQL string
-	switch f {
-	case "syslog", "log":
-		readSQL = fmt.Sprintf(`SELECT * FROM read_csv('%s', DELIM=' ', QUOTE='"', HEADER=FALSE, all_varchar=true, ignore_errors=true, null_padding=true)`, s3Path)
-	case "json":
-		readSQL = fmt.Sprintf("SELECT * FROM read_json_auto('%s')", s3Path)
-	default:
-		readSQL = fmt.Sprintf("SELECT * FROM read_csv_auto('%s', HEADER=FALSE)", s3Path)
+	if savedCfg != nil {
+		cfg := savedCfg
+		delim := cfg.Delimiter
+		quote := cfg.Quote
+		headerStr := "FALSE"
+		if cfg.HeaderRow {
+			headerStr = "TRUE"
+		}
+		if len(cfg.Columns) > 0 {
+			var selects []string
+			for i, col := range cfg.Columns {
+				selects = append(selects, fmt.Sprintf("CAST(column%d AS %s) AS %s", i, col.Type, col.Name))
+			}
+			readSQL = fmt.Sprintf(`SELECT %s FROM read_csv('%s', DELIM='%s', QUOTE='%s', HEADER=%s, all_varchar=true, ignore_errors=true, null_padding=true)`,
+				strings.Join(selects, ","), s3Path, delim, quote, headerStr)
+		} else {
+			readSQL = fmt.Sprintf(`SELECT * FROM read_csv('%s', DELIM='%s', QUOTE='%s', HEADER=%s, all_varchar=true, ignore_errors=true, null_padding=true)`,
+				s3Path, delim, quote, headerStr)
+		}
+	} else {
+		f := detectFormat(file)
+		switch f {
+		case "syslog", "log":
+			readSQL = fmt.Sprintf(`SELECT * FROM read_csv('%s', DELIM=' ', QUOTE='"', HEADER=FALSE, all_varchar=true, ignore_errors=true, null_padding=true)`, s3Path)
+		case "json":
+			readSQL = fmt.Sprintf("SELECT * FROM read_json_auto('%s')", s3Path)
+		default:
+			readSQL = fmt.Sprintf("SELECT * FROM read_csv_auto('%s', HEADER=FALSE)", s3Path)
+		}
 	}
 
 	copySQL := fmt.Sprintf("COPY (%s) TO '%s' (FORMAT PARQUET)", readSQL, outputPath)
