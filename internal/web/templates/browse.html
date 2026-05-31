@@ -228,6 +228,8 @@ function runQuery() {
   .then(function(d) {
     if (d.error) { status.innerHTML = '<span class="error">' + d.error + '</span>'; return; }
     lastResult = d;
+    panelState.analysisCache = null;
+    panelState.fetchingAnalysis = false;
     currentPage = 0;
     status.innerHTML = d.row_count + ' rows in ' + d.elapsed_ms + 'ms';
     document.getElementById('export-bar').style.display = d.row_count ? 'flex' : 'none';
@@ -252,7 +254,7 @@ function renderPage() {
 
   var h = '<table><thead><tr>';
   d.columns.forEach(function(c, ci) {
-    h += '<th onclick="openAnalyticsPanel(\'' + escJs(c.name) + '\',' + ci + ', event)" style="cursor:pointer;user-select:none;" title="Click for column analytics">' + c.name + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + c.type + '</span></th>';
+    h += '<th onclick="openAnalyticsPanel(\'' + escJs(c.name) + '\',' + ci + ', event)" style="cursor:pointer;user-select:none;" title="Click for column analytics">' + escHtml(c.name) + '<br><span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">' + escHtml(c.type) + '</span></th>';
   });
   h += '</tr></thead><tbody>';
   for (var i = start; i < end; i++) {
@@ -1085,37 +1087,43 @@ function buildNumericStatsChart(analysis, col) {
 }
 
 function buildTemporalChart(analysis, col) {
-  // Use histogram if available (binned by time), otherwise show min/max
   if (analysis.histogram && analysis.histogram.length) {
     return buildHistogramChart(analysis, col);
   }
   var stats = analysis.stats || {};
+  var minStr = stats.min || '';
+  var maxStr = stats.max || '';
+  var count = stats.count || 0;
   return {
     type: 'bar',
     data: {
-      labels: ['Min', 'Max'],
+      labels: [minStr, maxStr],
       datasets: [{
         label: 'Date',
-        data: [1, 1],
+        data: [count / 2, count / 2],
         backgroundColor: ['#0065FF', '#27B681']
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      indexAxis: 'y',
       plugins: {
         legend: { display: false },
         tooltip: {
           callbacks: {
             label: function(ctx) {
-              return ctx.dataIndex === 0 ? 'Min: ' + (stats.min || '') : 'Max: ' + (stats.max || '');
+              return ctx.dataIndex === 0 ? 'Earliest: ' + minStr : 'Latest: ' + maxStr;
             }
           }
         }
       },
       scales: {
-        x: { ticks: { color: '#9099A1' }, grid: { display: false } },
-        y: { display: false }
+        x: { display: false },
+        y: {
+          ticks: { color: '#9099A1', font: { size: 10 } },
+          grid: { display: false }
+        }
       }
     }
   };
