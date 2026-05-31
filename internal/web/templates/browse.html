@@ -1090,43 +1090,7 @@ function buildTemporalChart(analysis, col) {
   if (analysis.histogram && analysis.histogram.length) {
     return buildHistogramChart(analysis, col);
   }
-  var stats = analysis.stats || {};
-  var minStr = stats.min || '';
-  var maxStr = stats.max || '';
-  var count = stats.count || 0;
-  return {
-    type: 'bar',
-    data: {
-      labels: [minStr, maxStr],
-      datasets: [{
-        label: 'Date',
-        data: [count / 2, count / 2],
-        backgroundColor: ['#0065FF', '#27B681']
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      indexAxis: 'y',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: function(ctx) {
-              return ctx.dataIndex === 0 ? 'Earliest: ' + minStr : 'Latest: ' + maxStr;
-            }
-          }
-        }
-      },
-      scales: {
-        x: { display: false },
-        y: {
-          ticks: { color: '#9099A1', font: { size: 10 } },
-          grid: { display: false }
-        }
-      }
-    }
-  };
+  return null;
 }
 
 function renderMultiColumnCharts() {
