@@ -842,8 +842,6 @@ function findColumnSummary(colName) {
 }
 
 function renderPanelCharts() {
-  if (!panelState.analysisCache) return;
-
   if (panelState.selectedCols.length === 1) {
     renderSingleColumnChart();
   } else {
@@ -858,50 +856,205 @@ function getColType(colName) {
   return 'VARCHAR';
 }
 
+function detectColumnCategory(colIdx) {
+  var type = getColType(lastResult.columns[colIdx].name).toUpperCase();
+  if (/INT|FLOAT|DOUBLE|DECIMAL|NUMERIC/.test(type)) return 'numeric';
+  if (/TIMESTAMP|DATE|TIME/.test(type)) return 'temporal';
+  if (/BOOL/.test(type)) return 'boolean';
+  // Check actual data to confirm: if all values are numeric strings, treat as numeric
+  var rows = lastResult.rows;
+  var numericCount = 0;
+  var nonNumericCount = 0;
+  for (var i = 0; i < Math.min(rows.length, 100); i++) {
+    var v = rows[i][colIdx];
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'number' || (!isNaN(parseFloat(v)) && isFinite(v))) {
+      numericCount++;
+    } else {
+      nonNumericCount++;
+    }
+  }
+  if (numericCount > nonNumericCount && nonNumericCount === 0) return 'numeric';
+  return 'categorical';
+}
+
 function renderSingleColumnChart() {
   var canvas = document.getElementById('apanel-canvas');
   if (!canvas) return;
 
   var col = panelState.selectedCols[0];
-  var analysis = panelState.analysisCache.columns[col.name];
-  if (!analysis) {
-    var ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    return;
-  }
-
   var ctx = canvas.getContext('2d');
   if (canvas._chart) { canvas._chart.destroy(); }
 
-  var chartConfig = buildSingleChartConfig(analysis, col);
+  // Try server analysis first if available
+  if (panelState.analysisCache) {
+    var analysis = panelState.analysisCache.columns[col.name];
+    if (analysis) {
+      var chartConfig = buildServerChartConfig(analysis, col);
+      if (chartConfig) {
+        try {
+          canvas._chart = new Chart(ctx, chartConfig);
+          return;
+        } catch (e) {
+          // fall through to client-side
+        }
+      }
+    }
+  }
+
+  // Fallback: build chart from client-side data
+  var chartConfig = buildClientChartConfig(col);
   if (chartConfig) {
-    canvas._chart = new Chart(ctx, chartConfig);
+    try {
+      canvas._chart = new Chart(ctx, chartConfig);
+    } catch (e) {
+      var statusEl = document.getElementById('query-status');
+      if (statusEl) statusEl.innerHTML = '<span class="error">Chart error: ' + e.message + '</span>';
+    }
   }
 }
 
-function buildSingleChartConfig(analysis, col) {
-  var colType = getColType(col.name);
-  var isNumeric = /INT|FLOAT|DOUBLE|DECIMAL|NUMERIC/.test(colType.toUpperCase());
-  var isTemporal = /TIMESTAMP|DATE|TIME/.test(colType.toUpperCase());
-  var isBoolean = /BOOL/.test(colType.toUpperCase());
+function buildServerChartConfig(analysis, col) {
+  var category = detectColumnCategory(col.idx);
 
-  if (isBoolean || analysis.type === 'boolean') {
-    return buildBooleanChart(analysis, col);
+  switch (category) {
+    case 'numeric':
+      if (analysis.histogram && analysis.histogram.length) {
+        return buildHistogramChart(analysis, col);
+      }
+      if (analysis.type === 'numeric' && analysis.stats) {
+        return buildNumericStatsChart(analysis, col);
+      }
+      return null;
+    case 'boolean':
+      if (analysis.type === 'boolean' || analysis.stats) {
+        return buildBooleanChart(analysis, col);
+      }
+      return null;
+    case 'temporal':
+      if (analysis.histogram && analysis.histogram.length) {
+        return buildHistogramChart(analysis, col);
+      }
+      return null;
+    default: // categorical
+      if (analysis.top_values && analysis.top_values.length) {
+        return buildTopValuesChart(analysis, col);
+      }
+      return null;
   }
-  if (isNumeric || analysis.type === 'numeric') {
-    if (analysis.histogram && analysis.histogram.length) {
-      return buildHistogramChart(analysis, col);
+}
+
+function buildClientChartConfig(col) {
+  var category = detectColumnCategory(col.idx);
+  var stats = computeQuickStats(col.idx);
+  var allRows = lastResult.rows;
+
+  if (category === 'numeric') {
+    var numericVals = [];
+    for (var i = 0; i < allRows.length; i++) {
+      var v = allRows[i][col.idx];
+      if (v !== null && v !== undefined && !isNaN(parseFloat(v))) {
+        numericVals.push(parseFloat(v));
+      }
     }
-    return buildNumericStatsChart(analysis, col);
+    if (numericVals.length > 1) {
+      var min = Math.min.apply(null, numericVals);
+      var max = Math.max.apply(null, numericVals);
+      if (min < max) {
+        var binCount = Math.min(20, Math.max(5, Math.floor(numericVals.length / 10)));
+        var binWidth = (max - min) / binCount;
+        var bins = new Array(binCount).fill(0);
+        for (var i = 0; i < numericVals.length; i++) {
+          var idx = Math.min(binCount - 1, Math.floor((numericVals[i] - min) / binWidth));
+          bins[idx]++;
+        }
+        var labels = bins.map(function(_, i) {
+          return (min + i * binWidth).toFixed(1) + '-' + (min + (i + 1) * binWidth).toFixed(1);
+        });
+        return {
+          type: 'bar',
+          data: { labels: labels, datasets: [{ label: 'Count', data: bins, backgroundColor: 'rgba(0,101,255,0.6)', borderColor: 'rgba(0,101,255,1)', borderWidth: 1 }] },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { ticks: { color: '#9099A1', font: { size: 9 }, maxRotation: 45 }, grid: { color: '#31393F' } }, y: { ticks: { color: '#9099A1', font: { size: 9 } }, grid: { color: '#31393F' }, beginAtZero: true } }
+          }
+        };
+      }
+    }
+    // Fall back to stats chart
+    return {
+      type: 'bar',
+      data: { labels: ['Min', 'Mean', 'Max'], datasets: [{ label: 'Value', data: [stats.min || 0, parseFloat(stats.mean || 0), stats.max || 0], backgroundColor: ['#8739B1', '#0065FF', '#27B681'] }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { ticks: { color: '#9099A1', font: { size: 9 } }, grid: { display: false } }, y: { ticks: { color: '#9099A1', font: { size: 9 } }, grid: { color: '#31393F' } } }
+      }
+    };
   }
-  if (isTemporal || analysis.type === 'temporal') {
-    return buildTemporalChart(analysis, col);
+
+  if (category === 'boolean') {
+    var trueCount = 0, falseCount = 0, nullBoolCount = 0;
+    for (var i = 0; i < allRows.length; i++) {
+      var v = rows[i][col.idx];
+      if (v === null || v === undefined) { nullBoolCount++; }
+      else if (v === true || v === 'true' || v === 'TRUE' || v === '1' || v === 1) { trueCount++; }
+      else { falseCount++; }
+    }
+    var boolTotal = trueCount + falseCount + nullBoolCount || 1;
+    return {
+      type: 'bar',
+      data: {
+        labels: ['Boolean'],
+        datasets: [
+          { label: 'True (' + (trueCount / boolTotal * 100).toFixed(1) + '%)', data: [trueCount], backgroundColor: '#27B681' },
+          { label: 'False (' + (falseCount / boolTotal * 100).toFixed(1) + '%)', data: [falseCount], backgroundColor: '#f87171' },
+          { label: 'Null (' + (nullBoolCount / boolTotal * 100).toFixed(1) + '%)', data: [nullBoolCount], backgroundColor: '#596773' }
+        ]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#DEE4EA', font: { size: 9 } } } },
+        scales: { x: { stacked: true, ticks: { color: '#9099A1' }, grid: { color: '#31393F' }, beginAtZero: true }, y: { stacked: true, ticks: { color: '#9099A1' }, grid: { display: false } } }
+      }
+    };
   }
-  // Default: categorical
-  if (analysis.top_values && analysis.top_values.length) {
-    return buildTopValuesChart(analysis, col);
+
+  // Categorical: show top values from client data
+  var freq = {};
+  for (var i = 0; i < allRows.length; i++) {
+    var v = allRows[i][col.idx];
+    var sv = String(v === null || v === undefined ? 'NULL' : v);
+    freq[sv] = (freq[sv] || 0) + 1;
   }
-  return null;
+  var entries = Object.entries(freq).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 15);
+  var topVals = entries.map(function(e) { return { value: e[0], count: e[1], pct: allRows.length > 0 ? (e[1] / allRows.length * 100) : 0 }; });
+
+  var labels = topVals.map(function(v) { return v.value; });
+  var data = topVals.map(function(v) { return v.count; });
+  var pcts = topVals.map(function(v) { return v.pct.toFixed(1); });
+
+  return {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{ label: 'Frequency', data: data, backgroundColor: PANEL_COLORS.slice(0, Math.min(labels.length, PANEL_COLORS.length)), borderWidth: 0 }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: function(ctx) { return ctx.parsed.x + ' (' + pcts[ctx.dataIndex] + '%)'; } } }
+      },
+      scales: {
+        x: { ticks: { color: '#9099A1', font: { size: 9 } }, grid: { color: '#31393F' }, beginAtZero: true },
+        y: { ticks: { color: '#9099A1', font: { size: 9 } }, grid: { display: false } }
+      }
+    }
+  };
 }
 
 function buildHistogramChart(analysis, col) {
