@@ -740,7 +740,10 @@ function renderSingleColumnPanel() {
   // Header
   html += '<div class="apanel-header">';
   html += '<h3>' + escHtml(col.name) + ' <span class="type-badge">' + escHtml(colDef.type) + '</span></h3>';
+  html += '<div style="display:flex;gap:0.25rem;">';
+  html += '<button class="apanel-close" onclick="refreshChart()" title="Refresh chart">\u21BB</button>';
   html += '<button class="apanel-close" onclick="closeAnalyticsPanel()">\u00D7</button>';
+  html += '</div>';
   html += '</div>';
 
   // Quick stats
@@ -1368,6 +1371,13 @@ function renderMultiColumnCharts() {
       }
     });
   }
+}
+
+function refreshChart() {
+  panelState.analysisCache = null;
+  panelState.fetchingAnalysis = false;
+  renderAnalyticsPanel(); // shows client-side chart instantly
+  fetchAnalysis(); // upgrades when server data arrives
 }
 
 function fetchAnalysis() {
