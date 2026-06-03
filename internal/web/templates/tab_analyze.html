@@ -1,0 +1,37 @@
+{{define "tab_analyze"}}
+<div id="analyze-app">
+  <div id="analyze-placeholder">
+    <p style="color:var(--text-muted);font-size:0.95rem;text-align:center;padding:3rem 0;">
+      Run a query first, then analyze the results.<br>
+      <button class="btn btn-secondary" style="margin-top:0.5rem;" onclick="switchTab('query')">Go to Query</button>
+    </p>
+  </div>
+  <div id="analyze-content" style="display:none;">
+    <div style="display:flex;gap:1rem;">
+      <div id="analyze-sidebar" style="width:220px;flex-shrink:0;background:var(--surface);border:0.0625rem solid var(--border);border-radius:var(--radius);padding:0.75rem;">
+        <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.5rem;">COLUMNS</div>
+        <div id="analyze-col-list"></div>
+        <div style="margin-top:1rem;">
+          <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.5rem;">SUMMARY</div>
+          <div id="analyze-summary" style="font-size:0.8rem;"></div>
+        </div>
+      </div>
+      <div id="analyze-main" style="flex:1;">
+        <div id="analyze-chart-area" style="background:var(--surface);border:0.0625rem solid var(--border);border-radius:var(--radius);padding:0.75rem;margin-bottom:1rem;">
+          <div id="analyze-chart-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;"></div>
+          <div id="analyze-chart-wrap" style="position:relative;height:240px;"></div>
+          <div id="analyze-summary-line" style="font-size:0.8rem;color:var(--text-muted);font-style:italic;margin-top:0.5rem;"></div>
+        </div>
+        <div id="analyze-repr-rows" style="background:var(--surface);border:0.0625rem solid var(--border);border-radius:var(--radius);padding:0.75rem;"></div>
+        <div id="analyze-corr" style="display:none;background:var(--surface);border:0.0625rem solid var(--border);border-radius:var(--radius);padding:0.75rem;margin-top:1rem;"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.5rem;margin-top:1rem;">
+      <button class="btn btn-secondary" onclick="switchTab('query')">← Back to Query</button>
+      <button class="btn" onclick="switchTab('report')">Build Report →</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/query.js"></script>
+{{end}}

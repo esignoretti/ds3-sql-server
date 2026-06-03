@@ -1,0 +1,51 @@
+{{define "tab_query"}}
+<div class="query-layout">
+  <div class="query-editor-panel">
+    <div class="panel-header">
+      <span>SQL Query</span>
+      <span id="query-source-badge" style="font-size:0.8rem;color:var(--text-muted);"></span>
+    </div>
+    <div class="panel-body">
+      <textarea id="sql-editor" rows="6" style="width:100%;padding:0.5rem;background:var(--surface-2);border:0.0625rem solid var(--border);border-radius:var(--radius);color:var(--text);font-family:monospace;font-size:0.85rem;resize:vertical;margin-bottom:0.5rem;" placeholder="SELECT * FROM read_parquet('s3://bucket/*.parquet') LIMIT 100"></textarea>
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap;">
+        <button class="btn" onclick="buildSQL()">🔨 Build SQL</button>
+        <button class="btn" onclick="runQuery()">▶ Run</button>
+        <button class="btn btn-secondary" onclick="clearQuery()">Clear</button>
+        <button class="btn btn-secondary" onclick="switchTab('browse')">← Back to Browse</button>
+      </div>
+      <div id="query-status" style="font-size:0.85rem;"></div>
+    </div>
+  </div>
+
+  <div class="query-results-panel">
+    <div class="panel-header">
+      <span>Results</span>
+      <div id="export-bar" style="display:none;gap:0.5rem;align-items:center;">
+        <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="exportCSV()">⬇ CSV</button>
+        <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="exportJSON()">⬇ JSON</button>
+        <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="analyzeResults()">📊 Analyze</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div id="page-controls" style="display:none;gap:0.5rem;margin-bottom:0.5rem;align-items:center;flex-wrap:wrap;">
+        <label style="font-size:0.8rem;color:var(--text-muted);display:flex;align-items:center;gap:0.25rem;">
+          Rows per page:
+          <input type="number" id="page-size-input" value="100" min="1" max="100000" onchange="renderPage()" style="width:80px;background:var(--surface-2);color:var(--text);border:0.0625rem solid var(--border);border-radius:var(--radius);padding:0.2rem 0.4rem;font-size:0.8rem;">
+        </label>
+        <span id="page-info" style="font-size:0.85rem;color:var(--text-muted);"></span>
+        <button id="prev-page-btn" class="btn btn-secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem;" onclick="prevPage()">← Prev</button>
+        <button id="next-page-btn" class="btn btn-secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem;" onclick="nextPage()">Next →</button>
+      </div>
+      <div id="query-results" style="overflow-x:auto;"></div>
+    </div>
+  </div>
+</div>
+
+<style>
+.query-layout { display:flex; gap:0.75rem; }
+.query-editor-panel { flex:1; background:var(--surface); border:0.0625rem solid var(--border); border-radius:var(--radius); display:flex; flex-direction:column; }
+.query-results-panel { flex:2; background:var(--surface); border:0.0625rem solid var(--border); border-radius:var(--radius); display:flex; flex-direction:column; }
+</style>
+
+<script src="/static/query.js"></script>
+{{end}}
