@@ -1113,6 +1113,12 @@ function renderAnalyzeTab() {
   if (placeholder) placeholder.style.display = 'none';
   if (content) content.style.display = 'block';
   renderAnalyzeColumnList();
+  var chartWrap = document.getElementById('analyze-chart-wrap');
+  if (chartWrap) {
+    chartWrap.innerHTML = '<canvas id="apanel-canvas" style="width:100%;height:100%;"></canvas>';
+  }
+  var reprRows = document.getElementById('analyze-repr-rows');
+  if (reprRows) reprRows.innerHTML = '';
   if (tabState.analyze.selectedCols.length) {
     openAnalyticsPanel(tabState.analyze.selectedCols[0].name, tabState.analyze.selectedCols[0].idx);
   } else if (tabState.query.results.columns.length) {
