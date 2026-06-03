@@ -5,6 +5,7 @@ function switchProject(id) {
   tabState.browse.project = id;
   tabState.browse.bucket = '';
   tabState.browse.selectedFiles = [];
+  resetDownstreamTabs('browse');
   document.getElementById('breadcrumb').textContent = 'Loading buckets...';
   document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
   fetch('/buckets?project=' + encodeURIComponent(id))
@@ -12,7 +13,7 @@ function switchProject(id) {
     .then(function(d) {
       if (d.error) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--red);">' + d.error + '</p>'; return; }
       if (!d.buckets || !d.buckets.length) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">No buckets</p>'; return; }
-      document.getElementById('breadcrumb').textContent = 'Buckets';
+      document.getElementById('breadcrumb').innerHTML = '<a href="#" onclick="showBuckets();return false;" style="color:var(--primary);text-decoration:none;">Buckets</a>';
       var html = '';
       d.buckets.forEach(function(b) { html += '<div class="bucket-item" onclick="loadPrefix(\'' + escJs(b.name) + '\',\'\')">📁 ' + escHtml(b.name) + '</div>'; });
       html += '<div style="margin-top:0.75rem;border-top:0.0625rem solid var(--border);padding-top:0.75rem;">';
@@ -27,7 +28,7 @@ function switchProject(id) {
 function loadPrefix(bucket, prefix) {
   tabState.browse.bucket = bucket;
   var crumb = document.getElementById('breadcrumb');
-  crumb.textContent = bucket + '/' + prefix;
+  crumb.innerHTML = '<a href="#" onclick="showBuckets();return false;" style="color:var(--primary);text-decoration:none;">' + escHtml(tabState.browse.project) + '</a> / ' + (prefix ? escHtml(prefix) : escHtml(bucket));
   document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
   fetch('/buckets/' + encodeURIComponent(bucket) + '?project=' + encodeURIComponent(tabState.browse.project) + '&prefix=' + encodeURIComponent(prefix))
     .then(function(r) { return r.json(); })
@@ -72,6 +73,30 @@ function loadPrefix(bucket, prefix) {
         html += '</details>';
       }
       if (!supported.length && !convertible.length && !otherFiles.length && !d.prefixes.length) { html = '<p style="color:var(--text-muted);">No files</p>'; }
+      document.getElementById('browser-content').innerHTML = html;
+    })
+    .catch(function(e) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--red);">Error: ' + e.message + '</p>'; });
+}
+
+function showBuckets() {
+  if (!tabState.browse.project) return;
+  tabState.browse.bucket = '';
+  tabState.browse.selectedFiles = [];
+  resetDownstreamTabs('browse');
+  document.getElementById('breadcrumb').innerHTML = '<a href="#" onclick="showBuckets();return false" style="color:var(--primary);text-decoration:none;">Buckets</a>';
+  document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+  fetch('/buckets?project=' + encodeURIComponent(tabState.browse.project))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--red);">' + d.error + '</p>'; return; }
+      if (!d.buckets || !d.buckets.length) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--text-muted);">No buckets</p>'; return; }
+      document.getElementById('breadcrumb').innerHTML = '<a href="#" onclick="showBuckets();return false" style="color:var(--primary);text-decoration:none;">Buckets</a>';
+      var html = '';
+      d.buckets.forEach(function(b) { html += '<div class="bucket-item" onclick="loadPrefix(\'' + escJs(b.name) + '\',\'\')">📁 ' + escHtml(b.name) + '</div>'; });
+      html += '<div style="margin-top:0.75rem;border-top:0.0625rem solid var(--border);padding-top:0.75rem;">';
+      html += '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.25rem;">Or enter a bucket name:</div>';
+      html += '<div style="display:flex;gap:0.5rem;"><input type="text" id="manual-bucket" class="input" placeholder="my-bucket" style="flex:1;">';
+      html += '<button class="btn btn-secondary" onclick="manualBucket()">Open</button></div></div>';
       document.getElementById('browser-content').innerHTML = html;
     })
     .catch(function(e) { document.getElementById('browser-content').innerHTML = '<p style="color:var(--red);">Error: ' + e.message + '</p>'; });
@@ -127,7 +152,8 @@ function updateBrowseActions() {
     return;
   }
   var hasConvertible = files.some(function(f) { return /\.(log|txt|syslog|out|err)$/i.test(f); });
-  if (btnQuery) btnQuery.style.display = 'inline-block';
+  var allQueryable = files.every(function(f) { return !/\.(log|txt|syslog|out|err)$/i.test(f); });
+  if (btnQuery) btnQuery.style.display = allQueryable ? 'inline-block' : 'none';
   if (btnTransform) btnTransform.style.display = hasConvertible ? 'inline-block' : 'none';
   if (convertControls) convertControls.style.display = hasConvertible ? 'flex' : 'none';
 }

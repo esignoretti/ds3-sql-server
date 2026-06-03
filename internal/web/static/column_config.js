@@ -1,4 +1,4 @@
-var selProject = '';
+var selProject = ''; // fallback; prefer tabState.browse.project
 var cachedPreviewLines = [];
 var currentConfig = {
   bucket: '',
@@ -28,7 +28,7 @@ function loadPreview(bucket, file) {
     })
     .catch(function() { savedConfigsForBucket = []; });
 
-  fetch('/convert/preview?project=' + encodeURIComponent(selProject) + '&bucket=' + encodeURIComponent(bucket) + '&file=' + encodeURIComponent(file) + '&lines=25')
+  fetch('/convert/preview?project=' + encodeURIComponent(typeof tabState !== 'undefined' && tabState.browse.project ? tabState.browse.project : selProject) + '&bucket=' + encodeURIComponent(bucket) + '&file=' + encodeURIComponent(file) + '&lines=25')
     .then(function(r) { return r.json(); })
     .then(function(d) {
       cachedPreviewLines = d.preview_lines;
@@ -645,7 +645,7 @@ function pollSaveConvertStatus(jobId, projectId) {
         setTimeout(function() { pollSaveConvertStatus(jobId, projectId); }, 2000);
       } else if (job.status === 'done') {
         html += '<p style="color:var(--green);font-weight:600;">Conversion complete!</p>';
-        html += '<button class="btn" onclick="window.location.href=\'/browse?project=' + encodeURIComponent(projectId) + '\'">Go to Console</button>';
+        html += '<button class="btn" onclick="if(typeof switchTab===\'function\'){switchTab(\'browse\')}else{window.location.href=\'/browse?project=' + encodeURIComponent(projectId) + '\'}">Go to Console</button>';
         div.innerHTML = html;
       } else {
         html += '<span class="error">Conversion failed</span>';

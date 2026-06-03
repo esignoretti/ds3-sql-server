@@ -30,6 +30,11 @@ function runQuery() {
     panelState.fetchingAnalysis = false;
     tabState.query.currentPage = 0;
     status.innerHTML = d.row_count + ' rows in ' + d.elapsed_ms + 'ms';
+    // Update source badge
+    var badge = document.getElementById('query-source-badge');
+    if (badge && tabState.browse.selectedFiles.length) {
+      badge.textContent = tabState.browse.selectedFiles.length + ' file(s)';
+    }
     document.getElementById('export-bar').style.display = d.row_count ? 'flex' : 'none';
     if (!d.row_count) { results.innerHTML = '<p style="color:var(--text-muted);">No rows</p>'; return; }
     renderPage();
@@ -1112,17 +1117,72 @@ function renderAnalyzeTab() {
   }
   if (placeholder) placeholder.style.display = 'none';
   if (content) content.style.display = 'block';
+
   renderAnalyzeColumnList();
+
+  var col = tabState.analyze.selectedCols.length ? tabState.analyze.selectedCols[0] : {name: tabState.query.results.columns[0].name, idx: 0};
+  var analysis = tabState.analyze.analysisCache.columns[col.name];
+  var colDef = tabState.query.results.columns[col.idx];
+  var stats = typeof computeQuickStats === 'function' ? computeQuickStats(col.idx) : {};
+
+  // Render chart header
+  var headerEl = document.getElementById('analyze-chart-header');
+  if (headerEl) {
+    headerEl.innerHTML = '<div style="font-size:0.85rem;font-weight:600;">' + escHtml(col.name) + ' <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;">' + escHtml(colDef ? colDef.type : '') + '</span></div>';
+  }
+
+  // Render chart
   var chartWrap = document.getElementById('analyze-chart-wrap');
   if (chartWrap) {
-    chartWrap.innerHTML = '<canvas id="apanel-canvas" style="width:100%;height:100%;"></canvas>';
+    chartWrap.innerHTML = '<canvas id="analyze-canvas" style="width:100%;height:100%;"></canvas>';
+    var canvas = document.getElementById('analyze-canvas');
+    if (canvas && analysis) {
+      var ctx = canvas.getContext('2d');
+      if (canvas._chart) canvas._chart.destroy();
+      panelState.selectedCols = [col];
+      panelState.analysisCache = tabState.analyze.analysisCache;
+      var chartConfig = buildServerChartConfig(analysis, col);
+      if (!chartConfig) chartConfig = buildClientChartConfig(col);
+      if (chartConfig) {
+        try { canvas._chart = new Chart(ctx, chartConfig); } catch(e) {}
+      }
+    }
   }
-  var reprRows = document.getElementById('analyze-repr-rows');
-  if (reprRows) reprRows.innerHTML = '';
-  if (tabState.analyze.selectedCols.length) {
-    openAnalyticsPanel(tabState.analyze.selectedCols[0].name, tabState.analyze.selectedCols[0].idx);
-  } else if (tabState.query.results.columns.length) {
-    openAnalyticsPanel(tabState.query.results.columns[0].name, 0);
+
+  // Summary line
+  var summaryLine = document.getElementById('analyze-summary-line');
+  if (summaryLine && analysis && tabState.analyze.analysisCache.summary) {
+    var s = findColumnSummary ? findColumnSummary(col.name) : null;
+    summaryLine.textContent = s || '';
+  }
+
+  // Representative rows
+  var reprEl = document.getElementById('analyze-repr-rows');
+  if (reprEl && typeof selectRepresentativeRows === 'function') {
+    var reprRows = selectRepresentativeRows(col.idx);
+    var leftIdx = col.idx > 0 ? col.idx - 1 : (col.idx + 1 < tabState.query.results.columns.length ? col.idx + 1 : -1);
+    var rightIdx = col.idx + 1 < tabState.query.results.columns.length ? col.idx + 1 : (col.idx > 0 ? col.idx - 1 : -1);
+    if (leftIdx === col.idx) leftIdx = -1;
+    if (rightIdx === col.idx) rightIdx = -1;
+    if (leftIdx === rightIdx) rightIdx = -1;
+
+    var html = '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.5rem;">Representative Rows</div>';
+    html += '<table style="width:100%;font-size:0.75rem;"><thead><tr><th>#</th>';
+    if (leftIdx >= 0) html += '<th>' + escHtml(tabState.query.results.columns[leftIdx].name) + '</th>';
+    html += '<th>' + escHtml(col.name) + '</th>';
+    if (rightIdx >= 0) html += '<th>' + escHtml(tabState.query.results.columns[rightIdx].name) + '</th>';
+    html += '</tr></thead><tbody>';
+    for (var ri = 0; ri < reprRows.length; ri++) {
+      var rowIdx = reprRows[ri];
+      html += '<tr>';
+      html += '<td style="padding:0.25rem 0.5rem;color:var(--text-muted);cursor:pointer;text-decoration:underline dotted;" onclick="scrollToRow(' + rowIdx + ')">' + (rowIdx + 1) + '</td>';
+      if (leftIdx >= 0) html += '<td style="padding:0.25rem 0.5rem;">' + (tabState.query.results.rows[rowIdx][leftIdx] === null ? '<span style="color:var(--text-muted);font-style:italic;">NULL</span>' : escHtml(String(tabState.query.results.rows[rowIdx][leftIdx]))) + '</td>';
+      html += '<td style="padding:0.25rem 0.5rem;">' + (tabState.query.results.rows[rowIdx][col.idx] === null ? '<span style="color:var(--text-muted);font-style:italic;">NULL</span>' : escHtml(String(tabState.query.results.rows[rowIdx][col.idx]))) + '</td>';
+      if (rightIdx >= 0) html += '<td style="padding:0.25rem 0.5rem;">' + (tabState.query.results.rows[rowIdx][rightIdx] === null ? '<span style="color:var(--text-muted);font-style:italic;">NULL</span>' : escHtml(String(tabState.query.results.rows[rowIdx][rightIdx]))) + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    reprEl.innerHTML = html;
   }
 }
 

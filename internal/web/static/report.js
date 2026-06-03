@@ -248,3 +248,13 @@ function saveReport() {
 
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// Called by tab-manager when Report tab is activated
+function renderReportTab() {
+  if (!tabState.analyze.analysisCache || !tabState.query.results) {
+    var app = document.getElementById('report-app');
+    if (app) app.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:3rem 0;">Analyze your data first to build a report.<br><button class="btn btn-secondary" style="margin-top:0.5rem;" onclick="switchTab(\'analyze\')">Go to Analyze</button></p>';
+    return;
+  }
+  renderReport();
+}
