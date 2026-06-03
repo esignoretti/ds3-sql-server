@@ -25,7 +25,7 @@ function renderReport() {
 
   var html = '<div class="report-layout">';
   html += '<div class="report-topbar">';
-  html += '<input type="text" id="report-title" value="' + escHtml(reportState.title) + '" class="input" style="font-size:1.25rem;font-weight:600;width:400px;background:transparent;border:none;color:var(--text);" onchange="reportState.title=this.value">';
+  html += '<input type="text" id="report-title" value="' + escHtml(reportState.title) + '" class="input" style="font-size:1.25rem;font-weight:600;width:400px;background:transparent;border:none;color:var(--text);" onchange="reportState.title=this.value;renderReport()">';
   html += '<div style="display:flex;gap:0.5rem;">';
   html += '<button class="btn btn-secondary" onclick="saveReport()">💾 Save</button>';
   html += '<button class="btn btn-secondary" onclick="window.print()">📄 Export PDF</button>';
@@ -85,27 +85,27 @@ function renderCharts() {
     html += '<button class="btn btn-secondary" style="font-size:0.8rem;padding:0.2rem 0.5rem;" onclick="removeChart(\'' + chart.id + '\')">✕</button>';
     html += '</div>';
     html += '<div class="chart-config">';
-    html += '<label>X: <select onchange="reportState.charts[' + idx + '].x_column=this.value">';
+    html += '<label>X: <select onchange="reportState.charts[' + idx + '].x_column=this.value;renderCharts()">';
     reportState.columns.forEach(function(c) {
       html += '<option value="' + escAttr(c.name) + '"' + (c.name === chart.x_column ? ' selected' : '') + '>' + escHtml(c.name) + '</option>';
     });
     html += '</select></label>';
     if (chart.type !== 'pie' && chart.type !== 'histogram') {
-      html += '<label>Y: <select onchange="reportState.charts[' + idx + '].y_column=this.value">';
+      html += '<label>Y: <select onchange="reportState.charts[' + idx + '].y_column=this.value;renderCharts()">';
       reportState.columns.forEach(function(c) {
         html += '<option value="' + escAttr(c.name) + '"' + (c.name === chart.y_column ? ' selected' : '') + '>' + escHtml(c.name) + '</option>';
       });
       html += '</select></label>';
     }
     if (chart.type !== 'pie' && chart.type !== 'histogram') {
-      html += '<label>Group: <select onchange="reportState.charts[' + idx + '].group_by=this.value"><option value="">None</option>';
+      html += '<label>Group: <select onchange="reportState.charts[' + idx + '].group_by=this.value;renderCharts()"><option value="">None</option>';
       reportState.columns.forEach(function(c) {
         html += '<option value="' + escAttr(c.name) + '"' + (c.name === chart.group_by ? ' selected' : '') + '>' + escHtml(c.name) + '</option>';
       });
       html += '</select></label>';
     }
     if (chart.type === 'line') {
-      html += '<label>Bucket: <select onchange="reportState.charts[' + idx + '].bucket=this.value">';
+      html += '<label>Bucket: <select onchange="reportState.charts[' + idx + '].bucket=this.value;renderCharts()">';
       ['auto','hour','day','week','month'].forEach(function(b) {
         html += '<option value="' + b + '"' + (b === chart.bucket ? ' selected' : '') + '>' + b + '</option>';
       });
@@ -256,5 +256,8 @@ function renderReportTab() {
     if (app) app.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:3rem 0;">Analyze your data first to build a report.<br><button class="btn btn-secondary" style="margin-top:0.5rem;" onclick="switchTab(\'analyze\')">Go to Analyze</button></p>';
     return;
   }
+  reportState.analysis = tabState.analyze.analysisCache;
+  reportState.columns = tabState.query.results.columns;
+  reportState.rows = tabState.query.results.rows;
   renderReport();
 }

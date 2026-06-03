@@ -71,8 +71,13 @@ function getNextStep() {
   return 'report';
 }
 
-function navigateTo(step) {
-  if (step) switchTab(step);
+function navigateToTab(tabName) {
+  // Works from any page — uses switchTab on /app, navigates there otherwise
+  if (window.location.pathname === '/app') {
+    switchTab(tabName);
+  } else {
+    window.location.href = '/app#' + tabName;
+  }
 }
 
 function resetDownstreamTabs(from) {

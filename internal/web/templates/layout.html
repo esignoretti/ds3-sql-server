@@ -15,47 +15,43 @@
 <body>
     <div class="app">
         {{if .LoggedIn}}
-        <nav class="sidebar">
-            <div class="sidebar-logo">
-                <img src="https://cdn.prod.website-files.com/67a4c547ac46cdf433fcc313/67b3c0496628451a2866ce80_logo%20cubbit.webp" alt="Cubbit" style="height:28px;width:auto;">
-                <span>DS3 SQL</span>
-            </div>
-            <ul class="sidebar-nav">
-                <li><a href="/reports" class="{{if eq .Page "reports"}}active{{end}}">Saved Reports</a></li>
-            </ul>
-            <div class="sidebar-footer">
-                <form action="/auth/logout" method="GET" style="display:inline;">
-                    <button type="submit" class="btn-link">Logout</button>
-                </form>
-            </div>
-        </nav>
         <main class="main-content main-tabbed">
-            {{if eq .Page "app"}}
             <div class="tab-bar">
-                <div class="tab active" data-tab="browse" onclick="switchTab('browse')">
+                <div class="tab-brand">
+                    <img src="https://cdn.prod.website-files.com/67a4c547ac46cdf433fcc313/67b3c0496628451a2866ce80_logo%20cubbit.webp" alt="Cubbit" style="height:22px;width:auto;">
+                    <span>DS3 SQL</span>
+                </div>
+                <div class="tab" data-tab="browse" onclick="navigateToTab('browse')">
                     Browse <span class="tab-badge"></span>
                 </div>
-                <div class="tab" data-tab="transform" onclick="switchTab('transform')">
+                <div class="tab" data-tab="transform" onclick="navigateToTab('transform')">
                     Transform <span class="tab-badge"></span>
                 </div>
-                <div class="tab" data-tab="query" onclick="switchTab('query')">
+                <div class="tab" data-tab="query" onclick="navigateToTab('query')">
                     Query <span class="tab-badge"></span>
                 </div>
-                <div class="tab" data-tab="analyze" onclick="switchTab('analyze')">
+                <div class="tab" data-tab="analyze" onclick="navigateToTab('analyze')">
                     Analyze <span class="tab-badge"></span>
                 </div>
-                <div class="tab" data-tab="report" onclick="switchTab('report')">
+                <div class="tab" data-tab="report" onclick="navigateToTab('report')">
                     Report <span class="tab-badge"></span>
+                </div>
+                <div class="tab {{if eq .Page "reports"}}active{{end}}"><a href="/reports" style="color:inherit;text-decoration:none;">Saved Reports</a></div>
+                <div style="margin-left:auto;">
+                    <form action="/auth/logout" method="GET" style="display:inline;">
+                        <button type="submit" class="btn-link" style="padding:0.75rem 0.75rem;font-size:0.85rem;color:var(--text-muted);">Logout</button>
+                    </form>
                 </div>
             </div>
 
+            {{if eq .Page "app"}}
             <div class="tab-content active" id="tab-browse">{{template "tab_browse" .}}</div>
             <div class="tab-content" id="tab-transform">{{template "tab_transform" .}}</div>
             <div class="tab-content" id="tab-query">{{template "tab_query" .}}</div>
             <div class="tab-content" id="tab-analyze">{{template "tab_analyze" .}}</div>
             <div class="tab-content" id="tab-report">{{template "tab_report" .}}</div>
             {{else if eq .Page "reports"}}
-            <div style="padding:1.5rem;">{{template "reports_list" .}}</div>
+            <div style="padding:1.5rem;flex:1;overflow-y:auto;">{{template "reports_list" .}}</div>
             {{else}}
             {{template "login" .}}
             {{end}}

@@ -32,8 +32,8 @@
           <p style="color:var(--text-muted);font-size:0.85rem;">Select files from the browser</p>
         </div>
         <div id="browse-actions" style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
-          <button class="btn" id="btn-goto-query" onclick="navigateTo('query')" style="display:none;">▶ Run Query</button>
-          <button class="btn btn-secondary" id="btn-goto-transform" onclick="navigateTo('transform')" style="display:none;">⚙ Configure & Convert</button>
+          <button class="btn" id="btn-goto-query" onclick="navigateToTab('query')" style="display:none;">▶ Run Query</button>
+          <button class="btn btn-secondary" id="btn-goto-transform" onclick="navigateToTab('transform')" style="display:none;">⚙ Configure & Convert</button>
         </div>
         <div id="convert-controls" style="margin-top:0.5rem;display:none;gap:0.5rem;align-items:center;flex-wrap:wrap;">
           <button class="btn" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="startConvert()">⬇ Convert to Parquet</button>

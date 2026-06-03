@@ -15,9 +15,11 @@ function runQuery() {
   var results = document.getElementById('query-results');
   status.innerHTML = 'Running...';
   results.innerHTML = '';
-  document.getElementById('page-controls').style.display = 'none';
-  document.getElementById('export-bar').style.display = 'none';
-  fetch('/query?project=' + encodeURIComponent(tabState.browse.project), {
+    document.getElementById('page-controls').style.display = 'none';
+    document.getElementById('export-bar').style.display = 'none';
+    var btnAnalyze = document.getElementById('btn-analyze-results');
+    if (btnAnalyze) { btnAnalyze.style.opacity = '0.4'; btnAnalyze.style.pointerEvents = 'none'; }
+    fetch('/query?project=' + encodeURIComponent(tabState.browse.project), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({sql: sql})
@@ -36,6 +38,8 @@ function runQuery() {
       badge.textContent = tabState.browse.selectedFiles.length + ' file(s)';
     }
     document.getElementById('export-bar').style.display = d.row_count ? 'flex' : 'none';
+    var btnAnalyze = document.getElementById('btn-analyze-results');
+    if (btnAnalyze) { btnAnalyze.style.opacity = d.row_count ? '1' : '0.4'; btnAnalyze.style.pointerEvents = d.row_count ? 'auto' : 'none'; }
     if (!d.row_count) { results.innerHTML = '<p style="color:var(--text-muted);">No rows</p>'; return; }
     renderPage();
   })
@@ -96,6 +100,8 @@ function clearQuery() {
   document.getElementById('export-bar').style.display = 'none';
   document.getElementById('page-controls').style.display = 'none';
   tabState.query.results = null;
+  var btnAnalyze = document.getElementById('btn-analyze-results');
+  if (btnAnalyze) { btnAnalyze.style.opacity = '0.4'; btnAnalyze.style.pointerEvents = 'none'; }
 }
 
 function analyzeResults() {
@@ -114,9 +120,7 @@ function analyzeResults() {
   .then(function(analysis) {
     if (analysis.error) { status.innerHTML = '<span class="error">' + analysis.error + '</span>'; return; }
     tabState.analyze.analysisCache = analysis;
-    tabState.analyze.selectedCols = tabState.query.results.columns.map(function(c) {
-      return {name: c.name, idx: tabState.query.results.columns.indexOf(c)};
-    });
+    tabState.analyze.selectedCols = [{name: tabState.query.results.columns[0].name, idx: 0}];
     updateTabBadges();
     switchTab('analyze');
   })
@@ -192,8 +196,10 @@ function openAnalyticsPanel(colName, colIdx, evt) {
 }
 
 function closeAnalyticsPanel() {
-  document.getElementById('analytics-backdrop').classList.remove('visible');
-  document.getElementById('analytics-panel').classList.remove('open');
+  var backdrop = document.getElementById('analytics-backdrop');
+  var panel = document.getElementById('analytics-panel');
+  if (backdrop) backdrop.classList.remove('visible');
+  if (panel) panel.classList.remove('open');
   panelState.selectedCols = [];
 }
 
@@ -538,13 +544,14 @@ function scrollToRow(rowIdx) {
 }
 
 function findColumnSummary(colName) {
-  if (!panelState.analysisCache || !panelState.analysisCache.summary) return null;
-  for (var i = 0; i < panelState.analysisCache.summary.length; i++) {
-    if (panelState.analysisCache.summary[i].startsWith(colName + ' ')) {
-      return panelState.analysisCache.summary[i];
+  var cache = panelState.analysisCache || tabState.analyze.analysisCache;
+  if (!cache || !cache.summary) return null;
+  for (var i = 0; i < cache.summary.length; i++) {
+    if (cache.summary[i].startsWith(colName + ' ')) {
+      return cache.summary[i];
     }
-    if (panelState.analysisCache.summary[i].startsWith(colName + ':')) {
-      return panelState.analysisCache.summary[i];
+    if (cache.summary[i].startsWith(colName + ':')) {
+      return cache.summary[i];
     }
   }
   return null;
@@ -1100,10 +1107,9 @@ function fetchAnalysis() {
     panelState.analysisCache = d;
     // Sync to tabState for Analyze tab
     tabState.analyze.analysisCache = d;
-    if (!tabState.analyze.selectedCols.length && tabState.query.results) {
-      tabState.analyze.selectedCols = tabState.query.results.columns.map(function(c) {
-        return {name: c.name, idx: tabState.query.results.columns.indexOf(c)};
-      });
+    // Select first column by default (single-column view)
+    if (tabState.query.results && tabState.query.results.columns.length) {
+      tabState.analyze.selectedCols = [{name: tabState.query.results.columns[0].name, idx: 0}];
     }
     updateTabBadges();
     renderAnalyticsPanel();
@@ -1116,6 +1122,11 @@ function fetchAnalysis() {
   });
 }
 
+function selectAnalyzeColumn(colName, colIdx) {
+  tabState.analyze.selectedCols = [{name: colName, idx: colIdx}];
+  renderAnalyzeTabContent();
+}
+
 function renderAnalyzeTab() {
   var placeholder = document.getElementById('analyze-placeholder');
   var content = document.getElementById('analyze-content');
@@ -1126,6 +1137,7 @@ function renderAnalyzeTab() {
     if (placeholder) placeholder.style.display = 'block';
     if (content) content.style.display = 'none';
     if (placeholder) placeholder.innerHTML = '<p style="color:var(--text-muted);font-size:0.95rem;text-align:center;padding:3rem 0;">Analyzing data...<br><span style="font-size:0.8rem;">This may take a moment</span></p>';
+    panelState.fetchingAnalysis = false;
     fetchAnalysis();
     return;
   }
@@ -1140,11 +1152,18 @@ function renderAnalyzeTab() {
   if (content) content.style.display = 'block';
 
   renderAnalyzeColumnList();
+  renderAnalyzeTabContent();
+}
 
-  var col = tabState.analyze.selectedCols.length ? tabState.analyze.selectedCols[0] : {name: tabState.query.results.columns[0].name, idx: 0};
-  var analysis = tabState.analyze.analysisCache.columns[col.name];
+function renderAnalyzeTabContent() {
+  if (!tabState.analyze.selectedCols.length && tabState.query.results) {
+    tabState.analyze.selectedCols = [{name: tabState.query.results.columns[0].name, idx: 0}];
+  }
+  if (!tabState.analyze.selectedCols.length) return;
+
+  var col = tabState.analyze.selectedCols[0];
+  var analysis = tabState.analyze.analysisCache ? tabState.analyze.analysisCache.columns[col.name] : null;
   var colDef = tabState.query.results.columns[col.idx];
-  var stats = typeof computeQuickStats === 'function' ? computeQuickStats(col.idx) : {};
 
   // Render chart header
   var headerEl = document.getElementById('analyze-chart-header');
@@ -1155,24 +1174,28 @@ function renderAnalyzeTab() {
   // Render chart
   var chartWrap = document.getElementById('analyze-chart-wrap');
   if (chartWrap) {
-    chartWrap.innerHTML = '<canvas id="analyze-canvas" style="width:100%;height:100%;"></canvas>';
-    var canvas = document.getElementById('analyze-canvas');
-    if (canvas && analysis) {
+    chartWrap.innerHTML = '';
+    var canvas = document.createElement('canvas');
+    canvas.id = 'analyze-canvas';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    chartWrap.appendChild(canvas);
+    if (analysis) {
       var ctx = canvas.getContext('2d');
       if (canvas._chart) canvas._chart.destroy();
-      panelState.selectedCols = [col];
-      panelState.analysisCache = tabState.analyze.analysisCache;
       var chartConfig = buildServerChartConfig(analysis, col);
       if (!chartConfig) chartConfig = buildClientChartConfig(col);
       if (chartConfig) {
         try { canvas._chart = new Chart(ctx, chartConfig); } catch(e) {}
       }
+    } else {
+      chartWrap.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:240px;color:var(--text-muted);font-size:0.85rem;">Loading chart...</div>';
     }
   }
 
   // Summary line
   var summaryLine = document.getElementById('analyze-summary-line');
-  if (summaryLine && analysis && tabState.analyze.analysisCache.summary) {
+  if (summaryLine && analysis && tabState.analyze.analysisCache && tabState.analyze.analysisCache.summary) {
     var s = findColumnSummary ? findColumnSummary(col.name) : null;
     summaryLine.textContent = s || '';
   }
@@ -1196,7 +1219,7 @@ function renderAnalyzeTab() {
     for (var ri = 0; ri < reprRows.length; ri++) {
       var rowIdx = reprRows[ri];
       html += '<tr>';
-      html += '<td style="padding:0.25rem 0.5rem;color:var(--text-muted);cursor:pointer;text-decoration:underline dotted;" onclick="scrollToRow(' + rowIdx + ')">' + (rowIdx + 1) + '</td>';
+      html += '<td style="padding:0.25rem 0.5rem;color:var(--text-muted);">' + (rowIdx + 1) + '</td>';
       if (leftIdx >= 0) html += '<td style="padding:0.25rem 0.5rem;">' + (tabState.query.results.rows[rowIdx][leftIdx] === null ? '<span style="color:var(--text-muted);font-style:italic;">NULL</span>' : escHtml(String(tabState.query.results.rows[rowIdx][leftIdx]))) + '</td>';
       html += '<td style="padding:0.25rem 0.5rem;">' + (tabState.query.results.rows[rowIdx][col.idx] === null ? '<span style="color:var(--text-muted);font-style:italic;">NULL</span>' : escHtml(String(tabState.query.results.rows[rowIdx][col.idx]))) + '</td>';
       if (rightIdx >= 0) html += '<td style="padding:0.25rem 0.5rem;">' + (tabState.query.results.rows[rowIdx][rightIdx] === null ? '<span style="color:var(--text-muted);font-style:italic;">NULL</span>' : escHtml(String(tabState.query.results.rows[rowIdx][rightIdx]))) + '</td>';
@@ -1205,27 +1228,36 @@ function renderAnalyzeTab() {
     html += '</tbody></table>';
     reprEl.innerHTML = html;
   }
+
+  // Update column list active state
+  renderAnalyzeColumnList();
 }
 
 function renderAnalyzeColumnList() {
   var list = document.getElementById('analyze-col-list');
+  var summaryBar = document.getElementById('analyze-summary-bar');
   var summary = document.getElementById('analyze-summary');
   if (!list || !tabState.query.results) return;
   var html = '';
   tabState.query.results.columns.forEach(function(c, i) {
     var isSelected = tabState.analyze.selectedCols.some(function(sc) { return sc.name === c.name; });
-    html += '<label style="display:flex;align-items:center;gap:0.375rem;padding:0.25rem 0.35rem;font-size:0.85rem;cursor:pointer;border-radius:0.25rem;' + (isSelected ? 'background:rgba(0,101,255,0.15);' : '') + '" onclick="openAnalyticsPanel(\'' + escJs(c.name) + '\',' + i + ')">';
-    html += '<input type="checkbox" ' + (isSelected ? 'checked' : '') + ' style="pointer-events:none;"> ' + escHtml(c.name) + ' <span style="font-size:0.65rem;color:var(--text-muted);background:var(--surface);padding:0.1rem 0.35rem;border-radius:0.25rem;">' + c.type + '</span>';
-    html += '</label>';
+    html += '<span style="display:inline-flex;align-items:center;gap:0.25rem;padding:0.3rem 0.5rem;font-size:0.75rem;border-radius:0.375rem;cursor:pointer;border:0.0625rem solid ' + (isSelected ? 'var(--accent)' : 'var(--border)') + ';background:' + (isSelected ? 'rgba(0,101,255,0.12)' : 'var(--surface)') + ';color:' + (isSelected ? 'var(--accent)' : 'var(--text)') + ';" onclick="selectAnalyzeColumn(\'' + escJs(c.name) + '\',' + i + ')">';
+    html += escHtml(c.name) + ' <span style="font-size:0.6rem;color:var(--text-muted);">' + c.type + '</span>';
+    html += '</span>';
   });
   list.innerHTML = html;
+
+  // Render summary in its own bar
   if (summary && tabState.analyze.analysisCache && tabState.analyze.analysisCache.summary) {
-    var sHtml = '<ul style="list-style:disc;padding-left:1.25rem;">';
+    if (summaryBar) summaryBar.style.display = 'block';
+    var sHtml = '<ul style="list-style:disc;padding-left:1.25rem;margin:0;">';
     tabState.analyze.analysisCache.summary.forEach(function(s) {
-      sHtml += '<li style="margin-bottom:0.25rem;">' + escHtml(s) + '</li>';
+      sHtml += '<li style="margin-bottom:0.15rem;">' + escHtml(s) + '</li>';
     });
     sHtml += '</ul>';
     summary.innerHTML = sHtml;
+  } else {
+    if (summaryBar) summaryBar.style.display = 'none';
   }
 }
 
