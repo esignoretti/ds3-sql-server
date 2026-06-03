@@ -1098,7 +1098,17 @@ function fetchAnalysis() {
       return;
     }
     panelState.analysisCache = d;
+    // Sync to tabState for Analyze tab
+    tabState.analyze.analysisCache = d;
+    if (!tabState.analyze.selectedCols.length && tabState.query.results) {
+      tabState.analyze.selectedCols = tabState.query.results.columns.map(function(c) {
+        return {name: c.name, idx: tabState.query.results.columns.indexOf(c)};
+      });
+    }
+    updateTabBadges();
     renderAnalyticsPanel();
+    // If on analyze tab, re-render it
+    if (window.location.hash === '#analyze') renderAnalyzeTab();
   })
   .catch(function(e) {
     panelState.fetchingAnalysis = false;
@@ -1110,9 +1120,20 @@ function renderAnalyzeTab() {
   var placeholder = document.getElementById('analyze-placeholder');
   var content = document.getElementById('analyze-content');
   if (!content) return;
-  if (!tabState.analyze.analysisCache || !tabState.query.results) {
+
+  // Auto-fetch analysis if query results exist but no analysis yet
+  if (!tabState.analyze.analysisCache && tabState.query.results) {
     if (placeholder) placeholder.style.display = 'block';
     if (content) content.style.display = 'none';
+    if (placeholder) placeholder.innerHTML = '<p style="color:var(--text-muted);font-size:0.95rem;text-align:center;padding:3rem 0;">Analyzing data...<br><span style="font-size:0.8rem;">This may take a moment</span></p>';
+    fetchAnalysis();
+    return;
+  }
+
+  if (!tabState.query.results) {
+    if (placeholder) placeholder.style.display = 'block';
+    if (content) content.style.display = 'none';
+    if (placeholder) placeholder.innerHTML = '<p style="color:var(--text-muted);font-size:0.95rem;text-align:center;padding:3rem 0;">Run a query first, then analyze the results.<br><button class="btn btn-secondary" style="margin-top:0.5rem;" onclick="switchTab(\'query\')">Go to Query</button></p>';
     return;
   }
   if (placeholder) placeholder.style.display = 'none';
