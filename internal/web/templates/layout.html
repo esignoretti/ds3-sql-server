@@ -6,6 +6,7 @@
     <title>DS3 SQL</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="/static/tab-manager.js"></script>
     <link rel="stylesheet" href="/static/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,8 +21,7 @@
                 <span>DS3 SQL</span>
             </div>
             <ul class="sidebar-nav">
-                <li><a href="/browse" class="{{if eq .Page "browse"}}active{{end}}">Console</a></li>
-                <li><a href="/reports" class="{{if eq .Page "reports"}}active{{end}}">Reports</a></li>
+                <li><a href="/reports" class="{{if eq .Page "reports"}}active{{end}}">Saved Reports</a></li>
             </ul>
             <div class="sidebar-footer">
                 <form action="/auth/logout" method="GET" style="display:inline;">
@@ -29,13 +29,36 @@
                 </form>
             </div>
         </nav>
-        <main class="main-content">
-            {{if eq .Page "browse"}}{{template "browse" .}}
-            {{else if eq .Page "query"}}{{template "query" .}}
-            {{else if eq .Page "report"}}{{template "report" .}}
-            {{else if eq .Page "column_config"}}{{template "column_config" .}}
-            {{else if eq .Page "reports"}}{{template "reports_list" .}}
-            {{else}}{{template "browse" .}}{{end}}
+        <main class="main-content main-tabbed">
+            {{if eq .Page "app"}}
+            <div class="tab-bar">
+                <div class="tab active" data-tab="browse" onclick="switchTab('browse')">
+                    Browse <span class="tab-badge"></span>
+                </div>
+                <div class="tab" data-tab="transform" onclick="switchTab('transform')">
+                    Transform <span class="tab-badge"></span>
+                </div>
+                <div class="tab" data-tab="query" onclick="switchTab('query')">
+                    Query <span class="tab-badge"></span>
+                </div>
+                <div class="tab" data-tab="analyze" onclick="switchTab('analyze')">
+                    Analyze <span class="tab-badge"></span>
+                </div>
+                <div class="tab" data-tab="report" onclick="switchTab('report')">
+                    Report <span class="tab-badge"></span>
+                </div>
+            </div>
+
+            <div class="tab-content active" id="tab-browse">{{template "tab_browse" .}}</div>
+            <div class="tab-content" id="tab-transform">{{template "tab_transform" .}}</div>
+            <div class="tab-content" id="tab-query">{{template "tab_query" .}}</div>
+            <div class="tab-content" id="tab-analyze">{{template "tab_analyze" .}}</div>
+            <div class="tab-content" id="tab-report">{{template "tab_report" .}}</div>
+            {{else if eq .Page "reports"}}
+            <div style="padding:1.5rem;">{{template "reports_list" .}}</div>
+            {{else}}
+            {{template "login" .}}
+            {{end}}
         </main>
         {{else}}
         <main class="main-content login-page">
