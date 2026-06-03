@@ -106,3 +106,14 @@ document.addEventListener('DOMContentLoaded', function() {
     switchTab('browse');
   }
 });
+
+// Shared helpers used across browse.js, query.js, report.js, column_config.js
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escJs(s) { return s.replace(/'/g,"\\'").replace(/"/g,'\\"'); }
+function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function escCsv(s) {
+  if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
