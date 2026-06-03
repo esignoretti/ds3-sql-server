@@ -82,6 +82,7 @@ func (h *ColumnHandler) Preview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ColumnHandler) SaveConfig(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<10)
 	var req column.ColumnConfig
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)

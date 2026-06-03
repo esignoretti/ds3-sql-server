@@ -102,6 +102,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	for _, p := range projects {
 		log.Printf("project: %s (%s), users=%d", p.Name, p.ID, len(p.Users))
+		projectOK := false
 		for _, u := range p.Users {
 			cred := h.reconcileProjectCredential(u.UserID, u.UserName, p.Name)
 			if cred != nil {
@@ -111,8 +112,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 					AccessKey:   cred.ApiKey,
 					SecretKey:   cred.SecretKey,
 				})
+				projectOK = true
 				break
 			}
+		}
+		if !projectOK {
+			log.Printf("project %s (%s): all %d users failed credential reconciliation", p.Name, p.ID, len(p.Users))
 		}
 	}
 
@@ -167,16 +172,26 @@ func (h *AuthHandler) reconcileProjectCredential(userID, userName, projectName s
 
 	keyName := auth.S3KeyName(userName, projectName)
 
-	// Always remove existing key first to force a fresh create (so we get the secret)
+	// Try to reuse existing key if it already exists and has a secret
 	existing, err := h.iamClient.ListAPIKeys(userID, forgeResp.Token)
 	if err == nil {
 		for _, k := range existing {
 			if k.Name == keyName {
-				h.iamClient.DeleteAPIKey(k.ApiKey, userID, forgeResp.Token)
-				log.Printf("deleted stale key %s", keyName)
+				if k.SecretKey != "" {
+					log.Printf("reusing existing key %s for %s/%s", keyName, userName, projectName)
+					return &k
+				}
+				log.Printf("key %s exists but has no secret, recreating", keyName)
+				if delErr := h.iamClient.DeleteAPIKey(k.ApiKey, userID, forgeResp.Token); delErr != nil {
+					log.Printf("delete stale key %s failed: %v", keyName, delErr)
+				} else {
+					log.Printf("deleted stale key %s", keyName)
+				}
 				break
 			}
 		}
+	} else if err != nil {
+		log.Printf("list keys for user %s failed: %v", userName, err)
 	}
 
 	// Create new key
