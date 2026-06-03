@@ -46,33 +46,15 @@ func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "layout.html", data)
 }
 
-func (h *Handler) BrowsePage(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) AppPage(w http.ResponseWriter, r *http.Request) {
 	session := auth.GetSession(r)
-	data := PageData{LoggedIn: true, Page: "browse", Projects: session.Projects}
-	h.render(w, "layout.html", data)
-}
-
-func (h *Handler) QueryPage(w http.ResponseWriter, r *http.Request) {
-	session := auth.GetSession(r)
-	data := PageData{LoggedIn: true, Page: "query", Projects: session.Projects}
-	h.render(w, "layout.html", data)
-}
-
-func (h *Handler) ReportPage(w http.ResponseWriter, r *http.Request) {
-	session := auth.GetSession(r)
-	data := PageData{LoggedIn: true, Page: "report", Projects: session.Projects}
+	data := PageData{LoggedIn: true, Page: "app", Projects: session.Projects}
 	h.render(w, "layout.html", data)
 }
 
 func (h *Handler) ReportsPage(w http.ResponseWriter, r *http.Request) {
 	session := auth.GetSession(r)
 	data := PageData{LoggedIn: true, Page: "reports", Projects: session.Projects}
-	h.render(w, "layout.html", data)
-}
-
-func (h *Handler) ColumnConfigPage(w http.ResponseWriter, r *http.Request) {
-	session := auth.GetSession(r)
-	data := PageData{LoggedIn: true, Page: "column_config", Projects: session.Projects}
 	h.render(w, "layout.html", data)
 }
 

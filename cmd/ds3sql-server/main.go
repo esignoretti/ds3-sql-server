@@ -227,11 +227,21 @@ func main() {
 	// Protected pages
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Middleware(sessionStore))
-		r.Get("/browse", webHandler.BrowsePage)
-		r.Get("/query", webHandler.QueryPage)
-		r.Get("/report", webHandler.ReportPage)
+		r.Get("/app", webHandler.AppPage)
 		r.Get("/reports", webHandler.ReportsPage)
-		r.Get("/column-config", webHandler.ColumnConfigPage)
+		// Redirect old routes to new app
+		r.Get("/browse", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/app", http.StatusFound)
+		})
+		r.Get("/query", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/app", http.StatusFound)
+		})
+		r.Get("/report", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/app#report", http.StatusFound)
+		})
+		r.Get("/column-config", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/app#transform", http.StatusFound)
+		})
 	})
 
 	srv := &http.Server{
