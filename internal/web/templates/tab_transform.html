@@ -1,15 +1,38 @@
 {{define "tab_transform"}}
 <div id="transform-app">
-  <div class="config-layout">
-    <div class="card">
-      <h3>File Conversion</h3>
-      <div id="transform-file-list" style="margin-top:0.75rem;">
-        <p style="color:var(--text-muted);">No convertible files selected. <a href="#" onclick="switchTab('buckets');return false;">Go to Buckets</a> to select files.</p>
+  <div class="config-layout" style="display:flex;gap:0.75rem;align-items:flex-start;">
+    <div class="card" style="flex:1.2;">
+      <h3 style="margin-bottom:0.5rem;">Browse Files</h3>
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;">
+        <select id="tf-project-select" class="input" style="flex:1;min-width:140px;" onchange="tfSwitchProject(this.value)">
+          <option value="">Project...</option>
+          {{range .Projects}}
+          <option value="{{.ProjectID}}">{{.ProjectName}}</option>
+          {{end}}
+        </select>
+        <select id="tf-bucket" class="input" style="flex:2;min-width:180px;" onchange="tfLoadBucket(this.value)">
+          <option value="">Select bucket...</option>
+        </select>
+      </div>
+      <div id="tf-file-list" style="max-height:400px;overflow-y:auto;font-size:0.85rem;">
+        <p style="color:var(--text-muted);">Select a project and bucket to browse files for conversion.</p>
       </div>
     </div>
-    <div id="transform-config-area" style="display:none;"></div>
+    <div class="card" style="flex:1;">
+      <h3 style="margin-bottom:0.5rem;">Convert</h3>
+      <div id="transform-file-list">
+        <p style="color:var(--text-muted);font-size:0.85rem;">Click files in the browser to add them here.</p>
+      </div>
+      <div id="transform-config-area" style="display:none;margin-top:0.75rem;"></div>
+      <div id="tf-convert-progress" style="display:none;margin-top:0.75rem;"></div>
+      <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        <button class="btn" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="tfStartConvert()">⬇ Convert to Parquet</button>
+        <label style="font-size:0.8rem;color:var(--text-muted);display:flex;align-items:center;gap:0.25rem;"><input type="checkbox" id="tf-delete-original"> Delete original</label>
+      </div>
+    </div>
   </div>
 </div>
 
 <script src="/static/column_config.js"></script>
+<script src="/static/transform.js"></script>
 {{end}}

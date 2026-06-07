@@ -25,6 +25,14 @@ function switchTab(tabName) {
   updateTabBadges();
 
   if (tabName === 'catalog' && typeof loadCatalogTree === 'function') loadCatalogTree();
+  if (tabName === 'transform') {
+    var sel = document.getElementById('tf-project-select');
+    if (sel && tabState.browse.project && sel.value !== tabState.browse.project) {
+      sel.value = tabState.browse.project;
+      tfSwitchProject(tabState.browse.project);
+    }
+    renderTransformTab();
+  }
   if (tabName === 'analyze') renderAnalyzeTab();
   if (tabName === 'report') renderReportTab();
   if (tabName === 'transform') renderTransformTab();
@@ -40,30 +48,33 @@ function renderTransformTab() {
   var convertible = files.filter(function(p) { return !isQueryable(p); });
 
   if (!convertible.length && !tabState.transform.pendingFile) {
-    list.innerHTML = '<p style="color:var(--text-muted);">No convertible files selected. <a href="#" onclick="switchTab(\'buckets\');return false;">Go to Buckets</a> to select files.</p>';
+    list.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">No files selected for conversion. Use the browser on the left to find and click files.</p>';
     if (configArea) configArea.style.display = 'none';
     return;
   }
 
-  var html = '<div style="font-size:0.85rem;margin-bottom:0.5rem;color:var(--text-muted);">Selected files to convert:</div>' +
-    '<ul style="font-size:0.8rem;color:var(--text);">';
+  var html = '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">' + convertible.length + ' file(s) to convert:</div>' +
+    '<ul style="font-size:0.8rem;color:var(--text);margin:0;padding-left:1rem;">';
   convertible.forEach(function(p) {
     var name = p.split('/').pop();
     html += '<li style="margin-bottom:0.15rem;">' + escHtml(name) + '</li>';
   });
   html += '</ul>';
-  html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">Configure column parsing below, then click Save & Convert.</div>';
+  html += '<button class="btn btn-secondary" style="font-size:0.8rem;margin-top:0.5rem;" onclick="tabState.browse.selectedFiles = []; renderTransformTab(); updateTabBadges();">Clear</button>';
+  html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.75rem;">Configure column parsing below, then click Save & Convert.</div>';
   list.innerHTML = html;
 
   // Determine which file to configure
-  var bucket = tabState.browse.bucket || tabState.transform.pendingBucket;
+  var bucket = '';
   var fileKey = tabState.transform.pendingFile;
   if (!fileKey && convertible.length) {
     var firstPath = convertible[0];
-    fileKey = firstPath.replace(/^s3:\/\/[^\/]+\//, '');
+    var parts = firstPath.replace(/^s3:\/\//, '').split('/');
+    bucket = parts[0];
+    fileKey = parts.slice(1).join('/');
   }
 
-  if (fileKey && typeof loadPreview === 'function' && bucket) {
+  if (fileKey && bucket && typeof loadPreview === 'function') {
     if (configArea) configArea.style.display = 'block';
     configArea.innerHTML = '<div id="config-app"></div>';
     loadPreview(bucket, fileKey);
@@ -73,17 +84,17 @@ function renderTransformTab() {
 }
 
 function configureFile(bucket, fileKey) {
-  // Ensure file is selected
-  var s3path = 's3://' + bucket + '/' + fileKey;
-  if (tabState.browse.selectedFiles.indexOf(s3path) < 0) {
-    tabState.browse.selectedFiles.push(s3path);
-    updateTabBadges();
-    if (typeof updateBadge === 'function') updateBadge();
-    if (typeof updateBrowseActions === 'function') updateBrowseActions();
+  if (typeof tfConfigure === 'function') {
+    tfConfigure(bucket, fileKey);
+  } else {
+    var s3path = 's3://' + bucket + '/' + fileKey;
+    if (tabState.browse.selectedFiles.indexOf(s3path) < 0) {
+      tabState.browse.selectedFiles.push(s3path);
+      updateTabBadges();
+    }
+    tabState.transform.pendingBucket = bucket;
+    tabState.transform.pendingFile = fileKey;
   }
-  // Set pending for transform tab
-  tabState.transform.pendingBucket = bucket;
-  tabState.transform.pendingFile = fileKey;
   switchTab('transform');
 }
 
