@@ -14,32 +14,66 @@ function tfSwitchProject(id) {
     });
 }
 
+var tfPrefix = '';
+
 function tfLoadBucket(bucket) {
+  tfPrefix = '';
+  tfListAt(bucket, '');
+}
+
+function tfListAt(bucket, prefix) {
   var list = document.getElementById('tf-file-list');
-  if (!list || !bucket) { list.innerHTML = '<p style="color:var(--text-muted);">Select a bucket.</p>'; return; }
+  if (!list) return;
   list.innerHTML = '<p style="color:var(--text-muted);">Loading…</p>';
-  fetch('/buckets/' + encodeURIComponent(bucket) + '?project=' + encodeURIComponent(tabState.browse.project) + '&prefix=')
+  fetch('/buckets/' + encodeURIComponent(bucket) + '?project=' + encodeURIComponent(tabState.browse.project) + '&prefix=' + encodeURIComponent(prefix))
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.error) { list.innerHTML = '<p style="color:var(--red);">' + escHtml(d.error) + '</p>'; return; }
+
+      var html = '';
+      // Breadcrumb / navigation
+      if (prefix) {
+        var parent = prefix.split('/').filter(Boolean).slice(0, -1).join('/');
+        parent = parent ? parent + '/' : '';
+        html += '<div class="tf-nav" style="margin-bottom:0.35rem;">' +
+          '<a href="#" onclick="tfListAt(\'' + escJs(bucket) + '\',\'\');return false;" style="color:var(--primary);font-size:0.85rem;">📁 ' + escHtml(bucket) + '</a>';
+        var parts = prefix.split('/').filter(Boolean);
+        var cumulative = '';
+        parts.forEach(function(p) {
+          cumulative += p + '/';
+          html += ' / <a href="#" onclick="tfListAt(\'' + escJs(bucket) + '\',\'' + escJs(cumulative) + '\');return false;" style="color:var(--primary);font-size:0.85rem;">' + escHtml(p) + '</a>';
+        });
+        html += '</div>';
+      } else {
+        html += '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.35rem;">📁 ' + escHtml(bucket) + '</div>';
+      }
+
+      // Subdirectories
+      (d.prefixes || []).forEach(function(p) {
+        var name = p.replace(/\/$/, '').split('/').pop();
+        html += '<div class="tf-dir" onclick="tfListAt(\'' + escJs(bucket) + '\',\'' + escJs(p) + '\')" style="cursor:pointer;padding:0.25rem 0.25rem;font-size:0.85rem;">📁 ' + escHtml(name) + '/</div>';
+      });
+
+      // Files
       var all = d.objects || [];
       var convertible = all.filter(function(o) {
         var l = o.key.toLowerCase();
         return !(l.endsWith('.parquet') || l.endsWith('.csv') || l.endsWith('.json') || l.endsWith('.jsonl') || l.endsWith('.tsv'));
       });
-      if (!convertible.length) {
-        list.innerHTML = '<p style="color:var(--text-muted);">No files that need conversion in this bucket (only .parquet/.csv/.json/.tsv found).</p>';
-        return;
+
+      if (convertible.length) {
+        html += '<div style="font-size:0.85rem;color:var(--text-muted);margin-top:0.35rem;margin-bottom:0.25rem;">' + convertible.length + ' convertible file(s):</div>';
+        convertible.forEach(function(o) {
+          var s3path = 's3://' + bucket + '/' + o.key;
+          var isSelected = tabState.browse.selectedFiles.indexOf(s3path) >= 0;
+          html += '<div class="tf-file-row' + (isSelected ? ' tf-selected' : '') + '">' +
+            '<span onclick="tfToggleFile(\'' + escAttr(s3path) + '\',this)" style="cursor:pointer;">' + (isSelected ? '☑' : '☐') + ' ' + escHtml(o.key.split('/').pop()) + '</span>' +
+            ' <span style="color:var(--text-muted);font-size:0.75rem;">' + fmtSize(o.size) + '</span>' +
+            ' <a href="#" onclick="tfConfigure(\'' + escJs(bucket) + '\',\'' + escJs(o.key) + '\');return false;" style="color:var(--primary);font-size:0.75rem;text-decoration:none;">[configure]</a></div>';
+        });
       }
-      var html = '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.35rem;">' + convertible.length + ' file(s) — click to add, <a href="#" onclick="return false;" style="color:var(--primary);">[configure]</a> to edit parsing:</div>';
-      convertible.forEach(function(o) {
-        var s3path = 's3://' + bucket + '/' + o.key;
-        var isSelected = tabState.browse.selectedFiles.indexOf(s3path) >= 0;
-        html += '<div class="tf-file-row' + (isSelected ? ' tf-selected' : '') + '">' +
-          '<span onclick="tfToggleFile(\'' + escAttr(s3path) + '\',this.parentElement)" style="cursor:pointer;">' + (isSelected ? '☑' : '☐') + ' ' + escHtml(o.key.split('/').pop()) + '</span>' +
-          ' <span style="color:var(--text-muted);font-size:0.75rem;">' + fmtSize(o.size) + '</span>' +
-          ' <a href="#" onclick="tfConfigure(\'' + escJs(bucket) + '\',\'' + escJs(o.key) + '\');return false;" style="color:var(--primary);font-size:0.75rem;text-decoration:none;">[configure]</a></div>';
-      });
+
+      if (!html) html = '<p style="color:var(--text-muted);">Empty.</p>';
       list.innerHTML = html;
     });
 }

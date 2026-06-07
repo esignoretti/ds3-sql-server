@@ -85,33 +85,64 @@ function showCatalogDatasetDetail(ds) {
   }
 }
 
+var catBrowsePrefix = '';
+
 function catBrowseBucket(bucket) {
+  catBrowsePrefix = '';
+  catListAt(bucket, '');
+}
+
+function catListAt(bucket, prefix) {
   var filesEl = document.getElementById('cat-browse-files');
-  if (!filesEl || !bucket) { return; }
+  if (!filesEl) return;
   filesEl.innerHTML = '<span style="color:var(--text-muted);">Loading…</span>';
-  fetch('/buckets/' + encodeURIComponent(bucket) + '?project=' + encodeURIComponent(tabState.browse.project) + '&prefix=')
+  fetch('/buckets/' + encodeURIComponent(bucket) + '?project=' + encodeURIComponent(tabState.browse.project) + '&prefix=' + encodeURIComponent(prefix))
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.error) { filesEl.innerHTML = '<span style="color:var(--red);">' + escHtml(d.error) + '</span>'; return; }
+
+      var html = '';
+      // Breadcrumb
+      if (prefix) {
+        var parent = prefix.split('/').filter(Boolean).slice(0, -1).join('/');
+        parent = parent ? parent + '/' : '';
+        html += '<div style="margin-bottom:0.35rem;font-size:0.85rem;">' +
+          '<a href="#" onclick="catListAt(\'' + escJs(bucket) + '\',\'\');return false;" style="color:var(--primary);">📁 ' + escHtml(bucket) + '</a>';
+        var parts = prefix.split('/').filter(Boolean);
+        var cumulative = '';
+        parts.forEach(function(p) {
+          cumulative += p + '/';
+          html += ' / <a href="#" onclick="catListAt(\'' + escJs(bucket) + '\',\'' + escJs(cumulative) + '\');return false;" style="color:var(--primary);">' + escHtml(p) + '</a>';
+        });
+        html += '</div>';
+      } else {
+        html += '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.35rem;">📁 ' + escHtml(bucket) + '</div>';
+      }
+
+      // Subdirectories
+      (d.prefixes || []).forEach(function(p) {
+        var name = p.replace(/\/$/, '').split('/').pop();
+        html += '<div onclick="catListAt(\'' + escJs(bucket) + '\',\'' + escJs(p) + '\')" style="cursor:pointer;padding:0.25rem;font-size:0.85rem;">📁 ' + escHtml(name) + '/</div>';
+      });
+
+      // Files — all queryable formats
       var files = (d.objects || []).filter(function(o) {
         var l = o.key.toLowerCase();
         return l.endsWith('.parquet') || l.endsWith('.csv') || l.endsWith('.json') || l.endsWith('.jsonl') || l.endsWith('.tsv');
       });
-      if (!files.length) {
-        filesEl.innerHTML = '<span style="color:var(--text-muted);">No queryable files in this bucket.</span>';
-        return;
+      if (files.length) {
+        html += '<div style="font-size:0.85rem;color:var(--text-muted);margin-top:0.35rem;margin-bottom:0.25rem;">' + files.length + ' file(s) — click +Table to register:</div>';
+        files.forEach(function(o) {
+          html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:0.3rem 0.25rem;border-bottom:0.0625rem solid var(--border);font-size:0.85rem;">' +
+            '<span>' + escHtml(o.key.split('/').pop()) + ' <span style="color:var(--text-muted);font-size:0.75rem;">(' + fmtSize(o.size) + ')</span></span>' +
+            '<button class="btn btn-secondary" style="font-size:0.7rem;padding:0.1rem 0.5rem;" onclick="catalogRegisterFromBrowse(\'' + escJs(bucket) + '\',\'' + escJs(o.key) + '\')">+ Table</button>' +
+            '</div>';
+        });
       }
-      var html = '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.35rem;">' + files.length + ' file(s) — click to register:</div>';
-      files.forEach(function(o) {
-        var path = 's3://' + bucket + '/' + o.key;
-        html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:0.3rem 0.25rem;border-bottom:0.0625rem solid var(--border);font-size:0.85rem;">' +
-          '<span>' + escHtml(o.key.split('/').pop()) + ' <span style="color:var(--text-muted);font-size:0.75rem;">(' + fmtSize(o.size) + ')</span></span>' +
-          '<button class="btn btn-secondary" style="font-size:0.7rem;padding:0.1rem 0.5rem;" onclick="catalogRegisterFromBrowse(\'' + escJs(bucket) + '\',\'' + escJs(o.key) + '\')">+ Table</button>' +
-          '</div>';
-      });
+
+      if (!html) html = '<span style="color:var(--text-muted);">Empty.</span>';
       filesEl.innerHTML = html;
-    })
-    .catch(function(e) { filesEl.innerHTML = '<span style="color:var(--red);">Error: ' + escHtml(e.message) + '</span>'; });
+    });
 }
 
 function catalogRegisterFromBrowse(bucket, key) {
