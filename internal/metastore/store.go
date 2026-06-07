@@ -41,6 +41,22 @@ type Table struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
+// JobRecord is the persisted form of a job for query history.
+type JobRecord struct {
+	ID             string    `json:"id"`
+	ProjectID      string    `json:"project_id"`
+	Type           string    `json:"type"`
+	SQL            string    `json:"sql"`
+	Status         string    `json:"status"`
+	Error          string    `json:"error,omitempty"`
+	RowCount       int64     `json:"row_count"`
+	BytesScanned   int64     `json:"bytes_scanned"`
+	ResultLocation string    `json:"result_location,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	StartedAt      time.Time `json:"started_at"`
+	FinishedAt     time.Time `json:"finished_at"`
+}
+
 // Store is the pluggable metadata store. Phase 1 ships the embedded SQLite
 // implementation; Phase 4 adds a Postgres implementation of this same interface.
 type Store interface {
@@ -53,6 +69,12 @@ type Store interface {
 	ListTables(ctx context.Context, projectID, dataset string) ([]*Table, error)
 	DeleteTable(ctx context.Context, projectID, dataset, name string) error
 	BumpDataVersion(ctx context.Context, projectID, dataset, name string) (int64, error)
+
+	// Jobs (query history)
+	CreateJob(ctx context.Context, j *JobRecord) error
+	UpdateJob(ctx context.Context, j *JobRecord) error
+	GetJob(ctx context.Context, id string) (*JobRecord, error)
+	ListJobs(ctx context.Context, projectID string, limit int) ([]*JobRecord, error)
 
 	Close() error
 }

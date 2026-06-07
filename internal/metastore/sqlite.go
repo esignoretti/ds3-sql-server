@@ -53,6 +53,21 @@ func (s *SQLiteStore) migrate() error {
 			updated_at        TEXT NOT NULL,
 			PRIMARY KEY (project_id, dataset, name)
 		)`,
+		`CREATE TABLE IF NOT EXISTS jobs (
+			id              TEXT PRIMARY KEY,
+			project_id      TEXT NOT NULL,
+			type            TEXT NOT NULL,
+			sql             TEXT NOT NULL,
+			status          TEXT NOT NULL,
+			error           TEXT NOT NULL,
+			row_count       INTEGER NOT NULL,
+			bytes_scanned   INTEGER NOT NULL,
+			result_location TEXT NOT NULL,
+			created_at      TEXT NOT NULL,
+			started_at      TEXT NOT NULL,
+			finished_at     TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_project_created ON jobs(project_id, created_at DESC)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -217,6 +232,103 @@ func (s *SQLiteStore) BumpDataVersion(ctx context.Context, projectID, dataset, n
 		return 0, err
 	}
 	return t.DataVersion, nil
+}
+
+// ── Job helpers ────────────────────────────────────────────────
+
+func fmtTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
+func parseTime(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	t, _ := time.Parse(time.RFC3339Nano, s)
+	return t
+}
+
+func (s *SQLiteStore) CreateJob(ctx context.Context, j *JobRecord) error {
+	if j.CreatedAt.IsZero() {
+		j.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO jobs (id, project_id, type, sql, status, error, row_count, bytes_scanned, result_location, created_at, started_at, finished_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		j.ID, j.ProjectID, j.Type, j.SQL, j.Status, j.Error, j.RowCount, j.BytesScanned, j.ResultLocation,
+		fmtTime(j.CreatedAt), fmtTime(j.StartedAt), fmtTime(j.FinishedAt))
+	if err != nil {
+		return fmt.Errorf("create job: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) UpdateJob(ctx context.Context, j *JobRecord) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET status = ?, error = ?, row_count = ?, bytes_scanned = ?, result_location = ?, started_at = ?, finished_at = ?
+		 WHERE id = ?`,
+		j.Status, j.Error, j.RowCount, j.BytesScanned, j.ResultLocation,
+		fmtTime(j.StartedAt), fmtTime(j.FinishedAt), j.ID)
+	if err != nil {
+		return fmt.Errorf("update job: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func scanJob(row interface{ Scan(...any) error }) (*JobRecord, error) {
+	var j JobRecord
+	var created, started, finished string
+	err := row.Scan(&j.ID, &j.ProjectID, &j.Type, &j.SQL, &j.Status, &j.Error,
+		&j.RowCount, &j.BytesScanned, &j.ResultLocation, &created, &started, &finished)
+	if err != nil {
+		return nil, err
+	}
+	j.CreatedAt = parseTime(created)
+	j.StartedAt = parseTime(started)
+	j.FinishedAt = parseTime(finished)
+	return &j, nil
+}
+
+const jobCols = `id, project_id, type, sql, status, error, row_count, bytes_scanned, result_location, created_at, started_at, finished_at`
+
+func (s *SQLiteStore) GetJob(ctx context.Context, id string) (*JobRecord, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+jobCols+` FROM jobs WHERE id = ?`, id)
+	j, err := scanJob(row)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get job: %w", err)
+	}
+	return j, nil
+}
+
+func (s *SQLiteStore) ListJobs(ctx context.Context, projectID string, limit int) ([]*JobRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+jobCols+` FROM jobs WHERE project_id = ? ORDER BY created_at DESC LIMIT ?`,
+		projectID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+	defer rows.Close()
+	out := []*JobRecord{}
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
 }
 
 var _ Store = (*SQLiteStore)(nil)
