@@ -83,6 +83,22 @@ func (h *TableHandler) DescribeForProject(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(tbl)
 }
 
+// DropWithDeps drops a table; for managed tables it deletes the underlying data
+// via the deleter and invalidates dependent result-cache entries.
+func (h *TableHandler) DropWithDeps(w http.ResponseWriter, r *http.Request, projectID string, deleter catalog.PrefixDeleter, cache catalog.CacheInvalidator, accessKey, secretKey, endpoint string) {
+	dataset := chi.URLParam(r, "dataset")
+	name := chi.URLParam(r, "table")
+	if err := h.cat.DropTableWithData(r.Context(), projectID, dataset, name, deleter, cache, accessKey, secretKey, endpoint); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, metastore.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, `{"error":"`+err.Error()+`"}`, status)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *TableHandler) DropForProject(w http.ResponseWriter, r *http.Request, projectID string) {
 	dataset := chi.URLParam(r, "dataset")
 	name := chi.URLParam(r, "table")
