@@ -179,7 +179,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to init query engine: %v", err)
 	}
-	queryHandler := api.NewQueryHandler(queryEngine)
 	schemaHandler := api.NewSchemaHandler(queryEngine)
 
 	// Analysis engine
@@ -292,6 +291,7 @@ func main() {
 	writeExecutor := job.NewLocalWriteExecutor(writeWriter)
 	jobManager.SetWriteExecutor(writeExecutor)
 
+	queryHandler := api.NewQueryHandler(queryEngine, catService)
 	datasetHandler := api.NewDatasetHandler(catService)
 	tableHandler := api.NewTableHandler(catService)
 	jobHandler := api.NewJobHandler(jobManager)
