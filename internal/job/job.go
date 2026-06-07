@@ -322,6 +322,13 @@ func (a *admission) wakeNext() {
 	}
 }
 
+// ExecutorFunc adapts a function to the Executor interface.
+type ExecutorFunc func(ctx context.Context, req ExecRequest) *query.Result
+
+func (f ExecutorFunc) Execute(ctx context.Context, req ExecRequest) *query.Result { return f(ctx, req) }
+
+var _ Executor = (ExecutorFunc)(nil)
+
 func (a *admission) cancelWaiter(project string, ch chan struct{}) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

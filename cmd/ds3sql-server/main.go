@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,6 +20,7 @@ import (
 	"github.com/esignoretti/ds3-sql-server/internal/analysis"
 	"github.com/esignoretti/ds3-sql-server/internal/api"
 	"github.com/esignoretti/ds3-sql-server/internal/auth"
+	"github.com/esignoretti/ds3-sql-server/internal/cache"
 	"github.com/esignoretti/ds3-sql-server/internal/catalog"
 	"github.com/esignoretti/ds3-sql-server/internal/column"
 	"github.com/esignoretti/ds3-sql-server/internal/config"
@@ -29,7 +31,34 @@ import (
 	"github.com/esignoretti/ds3-sql-server/internal/report"
 	"github.com/esignoretti/ds3-sql-server/internal/s3"
 	"github.com/esignoretti/ds3-sql-server/internal/web"
+	"github.com/esignoretti/ds3-sql-server/internal/worker"
 )
+
+// wireResolver adapts catalog.Service.Resolve to worker.WireResolver.
+type wireResolver struct{ cat *catalog.Service }
+
+func (w wireResolver) ResolveWire(ctx context.Context, projectID, sql string) ([]worker.WireBinding, error) {
+	bindings, err := w.cat.Resolve(ctx, projectID, sql)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]worker.WireBinding, len(bindings))
+	for i, b := range bindings {
+		sc := "hdd"
+		if t, err := w.cat.GetTable(ctx, projectID, b.Schema, b.Name); err == nil {
+			if t.StorageClass != "" {
+				sc = t.StorageClass
+			}
+		}
+		out[i] = worker.WireBinding{
+			Schema:    b.Schema,
+			Name:      b.Name,
+			ReaderSQL: b.ReaderSQL,
+			StorageClass: sc,
+		}
+	}
+	return out, nil
+}
 
 func main() {
 	port := flag.Int("port", 0, "Listening port (overrides config)")
@@ -112,18 +141,82 @@ func main() {
 	columnHandler := api.NewColumnHandler(columnStore)
 
 	// Metastore, catalog service, and job manager
+	if dir := filepath.Dir(cfg.Metastore.Path); dir != "" {
+		os.MkdirAll(dir, 0755)
+	}
 	metaStore, err := metastore.OpenSQLite(cfg.Metastore.Path)
 	if err != nil {
 		log.Fatalf("failed to init metastore: %v", err)
 	}
 	defer metaStore.Close()
 	catService := catalog.NewService(metaStore, queryEngine)
-	localExecutor := job.NewLocalExecutor(catService, queryEngine)
-	jobManager := job.NewManager(localExecutor)
+
+	// Select the base executor by role.
+	var baseExecutor job.Executor
+	switch cfg.Role {
+	case "coordinator":
+		if len(cfg.Cluster.Workers) == 0 {
+			log.Fatalf("role=coordinator requires cluster.workers to be configured")
+		}
+		baseExecutor = worker.NewRemoteExecutor(cfg.Cluster.Workers, cfg.Cluster.SharedSecret, wireResolver{cat: catService})
+	default: // "all" and "worker" both run queries in-process for their own API
+		baseExecutor = job.NewLocalExecutor(catService, queryEngine)
+	}
+
+	// Result cache fronts the executor (coordinator + all).
+	resultCache := cache.NewResultCache(
+		metaStore,
+		cache.NewDirBlobstore(cfg.Cache.ResultDir),
+		cache.ResultCacheOpts{TTL: cfg.Cache.ResultTTL, MaxBytes: cfg.Cache.ResultMaxBytes},
+	)
+	versionSource := func(ctx context.Context, projectID, sql string) (map[string]int64, error) {
+		bindings, err := catService.Resolve(ctx, projectID, sql)
+		if err != nil {
+			return nil, err
+		}
+		versions := make(map[string]int64, len(bindings))
+		for _, b := range bindings {
+			t, err := catService.GetTable(ctx, projectID, b.Schema, b.Name)
+			if err != nil {
+				return nil, err
+			}
+			versions[projectID+"/"+b.Schema+"/"+b.Name] = t.DataVersion
+		}
+		return versions, nil
+	}
+	rawExec := func(ctx context.Context, projectID, sql, ak, sk, ep string, _ map[string]int64) *query.Result {
+		return baseExecutor.Execute(ctx, job.ExecRequest{
+			SQL: sql, ProjectID: projectID, AccessKey: ak, SecretKey: sk, Endpoint: ep,
+		})
+	}
+	caching := cache.NewCachingExecutor(resultCache, rawExec, versionSource)
+
+	// cachingExecutor makes the result cache satisfy job.Executor so the manager
+	// front-runs the cache before dispatching to the base executor.
+	cachingExecutor := job.ExecutorFunc(func(ctx context.Context, req job.ExecRequest) *query.Result {
+		return caching.Run(ctx, req.ProjectID, req.SQL, req.AccessKey, req.SecretKey, req.Endpoint)
+	})
+
+	jobManager := job.NewManager(cachingExecutor)
+	jobManager.SetSink(job.NewMetastoreSink(metaStore))
+	jobManager.SetQuota(cfg.Query.MaxConcurrentPerProject)
 
 	datasetHandler := api.NewDatasetHandler(catService)
 	tableHandler := api.NewTableHandler(catService)
 	jobHandler := api.NewJobHandler(jobManager)
+
+	// Worker data-plane server (role=worker): exposes /internal/execute guarded
+	// by the shared secret, fronted by a local-SSD data cache.
+	if cfg.Role == "worker" {
+		var dataCache *cache.DataCache
+		if cfg.Cache.DataDir != "" && cfg.Cache.DataMaxBytes > 0 {
+			dataCache = nil
+		}
+		workerSrv := worker.NewServer(queryEngine, cfg.Cluster.SharedSecret, dataCache)
+		r.Group(func(r chi.Router) {
+			r.Post("/internal/execute", workerSrv.Execute)
+		})
+	}
 
 	// Periodic job cleanup
 	go func() {
@@ -278,6 +371,14 @@ func main() {
 		})
 
 		// Job routes
+		r.Get("/jobs", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				jobHandler.ListForProject(w, r, p.ProjectID)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
 		r.Post("/jobs", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
 			for _, p := range session.Projects {
@@ -303,6 +404,7 @@ func main() {
 		r.Post("/convert/columns", columnHandler.SaveConfig)
 		r.Delete("/convert/columns/{bucket}/{pattern}", columnHandler.DeleteConfig)
 		r.Get("/jobs/{id}", jobHandler.Get)
+		r.Delete("/jobs/{id}", jobHandler.Cancel)
 	})
 
 	// Web UI

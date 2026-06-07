@@ -94,6 +94,15 @@ func TestSubmit_Cancel(t *testing.T) {
 	}
 }
 
+func TestExecutorFunc_Satisfies(t *testing.T) {
+	var e Executor = ExecutorFunc(func(ctx context.Context, req ExecRequest) *query.Result {
+		return &query.Result{RowCount: 1}
+	})
+	if e.Execute(context.Background(), ExecRequest{}).RowCount != 1 {
+		t.Fatal("ExecutorFunc did not invoke the closure")
+	}
+}
+
 func TestList_ReturnsRecent(t *testing.T) {
 	m := NewManager(execFunc(func(ctx context.Context, req ExecRequest) *query.Result {
 		return &query.Result{RowCount: 0}
