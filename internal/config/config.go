@@ -9,14 +9,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// MetastoreConfig holds settings for the embedded SQLite metastore.
+type MetastoreConfig struct {
+	Path string `yaml:"path"`
+}
+
 type Config struct {
 	ListenAddr    string `yaml:"listen_addr"`
 	IAMURL        string `yaml:"iam_url"`
 	DS3GatewayURL string `yaml:"ds3_gateway_url"`
+	Role          string `yaml:"role"`
 
 	Auth      AuthConfig      `yaml:"auth"`
 	Query     QueryConfig     `yaml:"query"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
+
+	Metastore MetastoreConfig `yaml:"metastore"`
 }
 
 type AuthConfig struct {
@@ -42,6 +50,7 @@ func Default() *Config {
 		ListenAddr:    ":8080",
 		IAMURL:         "https://api.eu00wi.cubbit.services",
 		DS3GatewayURL: "http://localhost:9000",
+		Role:          "all",
 		Auth: AuthConfig{
 			TokenExpiry:        24 * time.Hour,
 			RefreshTokenExpiry: 720 * time.Hour,
@@ -57,7 +66,18 @@ func Default() *Config {
 		RateLimit: RateLimitConfig{
 			QueriesPerMinute: 10,
 		},
+		Metastore: MetastoreConfig{
+			Path: defaultMetastorePath(),
+		},
 	}
+}
+
+func defaultMetastorePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "metastore.db"
+	}
+	return home + "/.ds3sql/metastore.db"
 }
 
 func Load(path string) (*Config, error) {
@@ -108,6 +128,12 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("DS3SQL_MEMORY_LIMIT"); v != "" {
 		cfg.Query.MemoryLimit = v
+	}
+	if v := os.Getenv("DS3SQL_ROLE"); v != "" {
+		cfg.Role = v
+	}
+	if v := os.Getenv("DS3SQL_METASTORE_PATH"); v != "" {
+		cfg.Metastore.Path = v
 	}
 
 	return cfg, nil
