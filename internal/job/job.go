@@ -141,18 +141,21 @@ func (m *Manager) Submit(parent context.Context, req ExecRequest) *Job {
 	cp := *j
 	go func() {
 		defer m.clearCancel(j.ID)
+		// Use a context that won't be cancelled for all saves so that terminal
+		// status transitions are always persisted (H6).
+		saveCtx := context.WithoutCancel(ctx)
 		if m.admit != nil {
 			if !m.admit.acquire(ctx, req.ProjectID) {
-				m.save(ctx, m.updateStatus(j, "cancelled"))
+				m.save(saveCtx, m.updateStatus(j, "cancelled"))
 				return
 			}
 			defer m.admit.release(req.ProjectID)
 		}
 		if ctx.Err() != nil {
-			m.save(ctx, m.updateStatus(j, "cancelled"))
+			m.save(saveCtx, m.updateStatus(j, "cancelled"))
 			return
 		}
-		m.save(ctx, m.updateStatus(j, "running"))
+		m.save(saveCtx, m.updateStatus(j, "running"))
 
 		switch typ {
 		case "ctas":
@@ -164,7 +167,7 @@ func (m *Manager) Submit(parent context.Context, req ExecRequest) *Job {
 				j.Status, j.Error = "failed", "write executor not configured"
 				m.jobs[j.ID] = j
 				m.mu.Unlock()
-				m.save(ctx, j)
+				m.save(saveCtx, j)
 				return
 			}
 			into, err := we.RunCTAS(ctx, req.ProjectID, req.SQL, req.AccessKey, req.SecretKey, req.Endpoint)
@@ -176,7 +179,7 @@ func (m *Manager) Submit(parent context.Context, req ExecRequest) *Job {
 			}
 			m.jobs[j.ID] = j
 			m.mu.Unlock()
-			m.save(ctx, j)
+			m.save(saveCtx, j)
 		case "load":
 			m.mu.RLock()
 			we := m.write
@@ -186,7 +189,7 @@ func (m *Manager) Submit(parent context.Context, req ExecRequest) *Job {
 				j.Status, j.Error = "failed", "load request or write executor missing"
 				m.jobs[j.ID] = j
 				m.mu.Unlock()
-				m.save(ctx, j)
+				m.save(saveCtx, j)
 				return
 			}
 			into, err := we.RunLoad(ctx, req.ProjectID, *req.Load, req.AccessKey, req.SecretKey, req.Endpoint)
@@ -198,7 +201,7 @@ func (m *Manager) Submit(parent context.Context, req ExecRequest) *Job {
 			}
 			m.jobs[j.ID] = j
 			m.mu.Unlock()
-			m.save(ctx, j)
+			m.save(saveCtx, j)
 		default:
 			res := m.exec.Execute(ctx, req)
 			m.mu.Lock()
@@ -214,7 +217,7 @@ func (m *Manager) Submit(parent context.Context, req ExecRequest) *Job {
 			}
 			m.jobs[j.ID] = j
 			m.mu.Unlock()
-			m.save(ctx, j)
+			m.save(saveCtx, j)
 		}
 	}()
 	return &cp
@@ -405,13 +408,25 @@ func (a *admission) cancelWaiter(project string, ch chan struct{}) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	q := a.waiters[project]
+	found := false
 	for i, c := range q {
 		if c == ch {
 			a.waiters[project] = append(q[:i], q[i+1:]...)
+			found = true
 			break
 		}
 	}
 	if len(a.waiters[project]) == 0 {
 		delete(a.waiters, project)
+	}
+	if !found {
+		// wakeNext already dequeued this waiter and incremented inUse.
+		// Release the slot since we won't use it.
+		a.inUse[project]--
+		if a.inUse[project] < 0 {
+			a.inUse[project] = 0
+		}
+		// Wake another waiter in our place.
+		a.wakeNext()
 	}
 }
