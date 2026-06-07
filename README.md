@@ -5,6 +5,9 @@ A lightweight, stateless sidecar service that enables SQL querying of data store
 ## Features
 
 - **Query S3 data with SQL** — DuckDB-powered engine runs `SELECT` queries against Parquet, CSV, JSON, and TSV files
+- **CREATE TABLE … AS SELECT** — CTAS write path creates managed Parquet tables from query results, with partition and storage-class support
+- **Batch load** — Ingest CSV, TSV, JSON, and Parquet sources into managed tables with append or overwrite mode
+- **Cron-driven schedules** — Recurring CTAS and query execution via standard cron expressions
 - **Multiple interfaces** — REST API, CLI (`ds3sql`), and Web UI (HTMX, no build step)
 - **Stateless** — no persistent database, no caching, no background jobs; per-query DuckDB instances are created on demand and discarded after each request
 - **Sidecar deployment** — sits alongside the DS3 Gateway, listens on localhost by default
@@ -13,6 +16,8 @@ A lightweight, stateless sidecar service that enables SQL querying of data store
 - **Bucket browsing** — list buckets and objects with prefix/delimiter navigation
 - **Paginated results** — both CLI and Web UI support configurable page sizes with next/prev navigation
 - **Connection pooling** — warm DuckDB pool eliminates per-query setup overhead (configurable pool size)
+- **Storage-class tiering** — route managed table data to SSD or HDD DS3 buckets
+- **Managed & external tables** — register external S3 locations or let the write path manage your data lifecycle
 
 ## Quick Start
 
@@ -44,6 +49,30 @@ make build-cli
 
 # Run a query
 ./ds3sql query "SELECT count(*) FROM read_csv_auto('s3://my-bucket/data.csv')"
+
+# --- Write path (Phase 3) ---
+
+# CTAS: create a managed Parquet table from a SELECT
+ds3sql tables create-as sales.daily \
+  --as "SELECT dt, region, sum(n) AS total FROM sales.raw GROUP BY 1, 2" \
+  --partition-by dt \
+  --storage-class ssd
+
+# Batch load: ingest CSV files into a managed table
+ds3sql load \
+  --source 's3://incoming/events/*.csv' \
+  --into sales.events \
+  --format csv \
+  --mode append
+
+# Schedule: run a CTAS every hour
+ds3sql schedules create \
+  --cron "0 * * * *" \
+  --sql "CREATE TABLE sales.hourly AS SELECT * FROM sales.events" \
+  --into sales.hourly
+
+# List schedules
+ds3sql schedules ls
 ```
 
 ### Docker

@@ -56,6 +56,93 @@ Authentication uses Cubbit's IAM challenge-response protocol with Ed25519 signat
 8. DuckDB instance is discarded
 9. Server returns JSON response
 
+## Write Path (Phase 3)
+
+Phase 3 extends DS3 SQL Server from read-only querying to a full write path: `CREATE TABLE … AS SELECT` (CTAS), batch load from source files, and cron-driven scheduling of both operations. Written data is stored as Parquet in storage-class-buckets (SSD/HDD tiers) and tracked in the metastore as *managed* tables.
+
+### System Diagram (Write Path)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  HTTP Server (chi router)                                         │
+│  ├── /jobs          POST/GET/DELETE  — CTAS, load, query jobs     │
+│  ├── /schedules     POST/GET/DELETE  — cron schedules             │
+│  ├── /datasets/*/tables  CRUD        — table registry             │
+├──────────────────────────────────────────────────────────────────┤
+│  Write Packages                                                   │
+│  ├── internal/write    — CTAS parser + executor, batch loader     │
+│  ├── internal/scheduler — cron tick, misfire-skip, job enqueue    │
+│  ├── internal/job      — async job manager (in-memory queue)      │
+├──────────────────────────────────────────────────────────────────┤
+│  Catalog (registry)                                               │
+│  ├── internal/catalog — RegisterManaged, DropTableWithData        │
+│  ├── internal/metastore — SQLite-based table/schedule registry    │
+├──────────────────────────────────────────────────────────────────┤
+│  DuckDB Engine                                                    │
+│  ├── ExecWrite — COPY ... TO for Parquet output                   │
+│  ├── QueryView  — catalog-aware SELECT with view bindings         │
+├──────────────────────────────────────────────────────────────────┤
+│  S3 Client (aws-sdk-go-v2 → DS3 Gateway / storage-class buckets)  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Components
+
+#### `internal/write` package
+
+- **CTAS parser** (`ctas.go`): A deliberately strict regex-based parser for the supported CTAS grammar. Rejects anything outside `CREATE TABLE [IF NOT EXISTS] <ds>.<tbl> [PARTITION BY (...)] [STORAGE 'ssd'|'hdd'] AS SELECT ...`. Not a general SQL parser.
+- **CTAS executor** (`ctas.go`): Resolves referenced catalog tables, builds a `COPY (SELECT ...) TO 's3://...' (FORMAT PARQUET, ...)` statement, executes via `query.Engine.ExecWrite`, then registers the result as a managed table via `catalog.Service.RegisterManaged`.
+- **Batch loader** (`load.go`): Reads source files (CSV, TSV, JSON, Parquet) via DuckDB reader functions and writes Parquet to a storage-class bucket. Supports append and overwrite modes. Overwrite clears the managed prefix before writing.
+- **Post-write invalidation** (`write.go`): After every write, bumps the table's `data_version` in the metastore and evicts dependent result-cache entries so subsequent queries see fresh data.
+
+#### `query.Engine.ExecWrite`
+
+A counterpart to `QueryView` that executes statements producing no result rows (e.g. `COPY ... TO`). It registers catalog tables as DuckDB views, applies S3 credentials, and executes. Created schemas are dropped after completion.
+
+#### Storage-Class Tiering
+
+Managed tables are written to either the `ssd` or `hdd` storage class. Each class maps to a distinct DS3 bucket and optional endpoint in `config.StorageConfig`:
+
+```yaml
+storage:
+  classes:
+    ssd:
+      bucket: ds3-fast
+      endpoint: ""
+    hdd:
+      bucket: ds3-cold
+      endpoint: ""
+```
+
+The endpoint can target different DS3 Gateway instances (e.g. an NVMe-backed gateway for SSD and a HDD-backed gateway for cold storage). An empty endpoint means "use the session's gateway endpoint."
+
+#### `internal/scheduler` package
+
+- **Cron tick**: Polls `GetDueSchedules` every 30 seconds (on coordinator or all roles).
+- **Misfire skip**: Uses a `running` flag per schedule. If a schedule is still running when its next tick fires, the tick is skipped entirely — no overlapping runs are allowed.
+- **Enqueue**: Hands each due schedule to a `schedulerEnqueuer` that submits a job via `job.Manager` and starts a goroutine to poll for completion. When the job finishes (done or failed), the `running` flag is cleared and `next_run_at` is advanced.
+
+#### `internal/job` package
+
+In-memory async job manager. Jobs can be `query`, `ctas`, or `load`. Plain queries default to synchronous fast-path; CTAS and load always return `202 Accepted` with a queued job object. The caller polls `GET /jobs/{id}` for completion.
+
+### Managed vs External Tables
+
+| Aspect | External | Managed |
+|--------|----------|---------|
+| **Created by** | `POST /datasets/{ds}/tables` (register) | CTAS, load |
+| **Data location** | User-specified S3 path | Storage-class bucket under `_managed/{dataset}/{table}/` |
+| **Format** | Any (parquet, csv, tsv, json) | Always Parquet |
+| **DROP semantics** | Registration only; source data preserved | Underlying Parquet files are deleted |
+| **Storage class** | User-specified hint | Determined by CTAS/load options |
+
+### Documented Simplifications
+
+1. **Strict CTAS grammar**: Only the documented syntax is accepted. No support for `WITH`, `UNION`, sub-queries in the `FROM` clause of the outer CTAS, or arbitrary DDL.
+2. **Partition-file sizing not enforced**: DuckDB manages file sizes; the system does not coalesce or repartition small files.
+3. **Single-writer assumption**: No distributed locking or optimistic concurrency control on table writes. Concurrent CTAS/load operations to the same table may interleave.
+4. **Scheduled-job credential limitation**: Scheduled jobs use the project's S3 credentials from the session at schedule-creation time. Credential rotation requires re-creating schedules.
+
 ## Component Overview
 
 | Component | Responsibility |

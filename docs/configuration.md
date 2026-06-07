@@ -38,6 +38,69 @@ All config fields can be overridden via environment variables:
 | `DS3SQL_THREADS` | `query.threads` | `0` (auto) |
 | `DS3SQL_MEMORY_LIMIT` | `query.memory_limit` | `2GB` |
 
+## Storage Configuration
+
+The write path (Phase 3) uses storage classes to map logical tiers to physical DS3 buckets. Configured under the `storage` key:
+
+```yaml
+storage:
+  classes:
+    ssd:
+      bucket: ds3-fast
+      endpoint: ""
+    hdd:
+      bucket: ds3-cold
+      endpoint: ""
+```
+
+Each storage class has:
+
+| Field | Description |
+|-------|-------------|
+| `bucket` | The DS3 bucket where managed table data is stored |
+| `endpoint` | Optional DS3 Gateway endpoint for this class; empty means use the session's gateway endpoint |
+
+The default configuration defines two classes:
+
+- **ssd** (`ds3-fast`): Intended for hot data, typically backed by NVMe or SSD storage on the DS3 Gateway.
+- **hdd** (`ds3-cold`): Intended for warm/cold data, typically backed by HDD or cheaper object storage.
+
+Custom classes can be added; the CTAS parser accepts any class name via `STORAGE 'classname'`.
+
+### Environment Variable Overrides
+
+```bash
+# Override SSD bucket and endpoint
+export DS3SQL_STORAGE_SSD_BUCKET=my-ssd-bucket
+export DS3SQL_STORAGE_SSD_ENDPOINT=https://ssd-gateway.example.com
+
+# Override HDD bucket and endpoint
+export DS3SQL_STORAGE_HDD_BUCKET=my-hdd-bucket
+export DS3SQL_STORAGE_HDD_ENDPOINT=https://hdd-gateway.example.com
+```
+
+| Variable | Overrides |
+|----------|-----------|
+| `DS3SQL_STORAGE_SSD_BUCKET` | `storage.classes.ssd.bucket` |
+| `DS3SQL_STORAGE_SSD_ENDPOINT` | `storage.classes.ssd.endpoint` |
+| `DS3SQL_STORAGE_HDD_BUCKET` | `storage.classes.hdd.bucket` |
+| `DS3SQL_STORAGE_HDD_ENDPOINT` | `storage.classes.hdd.endpoint` |
+
+## Scheduler Role
+
+The cron-driven scheduler runs only on nodes with `role: coordinator` or `role: all`. Worker-only nodes do not run the scheduler tick loop. Configure role via:
+
+```yaml
+role: all   # default — runs scheduler, query engine, and API
+```
+
+```bash
+# CLI override
+ds3sql-server --role coordinator
+```
+
+Env override: `DS3SQL_ROLE=coordinator`
+
 ## CLI Configuration
 
 The CLI stores session state in `~/.ds3sql/config` (JSON). This file is managed automatically by `ds3sql login` and `ds3sql logout`.
