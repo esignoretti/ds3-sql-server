@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -165,6 +164,40 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("DS3SQL_METASTORE_PATH"); v != "" {
 		cfg.Metastore.Path = v
+	}
+
+	// Storage env overrides
+	if v := os.Getenv("DS3SQL_STORAGE_SSD_BUCKET"); v != "" {
+		if cfg.Storage.Classes == nil {
+			cfg.Storage.Classes = make(map[string]StorageClassConfig)
+		}
+		s := cfg.Storage.Classes["ssd"]
+		s.Bucket = v
+		cfg.Storage.Classes["ssd"] = s
+	}
+	if v := os.Getenv("DS3SQL_STORAGE_SSD_ENDPOINT"); v != "" {
+		if cfg.Storage.Classes == nil {
+			cfg.Storage.Classes = make(map[string]StorageClassConfig)
+		}
+		s := cfg.Storage.Classes["ssd"]
+		s.Endpoint = v
+		cfg.Storage.Classes["ssd"] = s
+	}
+	if v := os.Getenv("DS3SQL_STORAGE_HDD_BUCKET"); v != "" {
+		if cfg.Storage.Classes == nil {
+			cfg.Storage.Classes = make(map[string]StorageClassConfig)
+		}
+		s := cfg.Storage.Classes["hdd"]
+		s.Bucket = v
+		cfg.Storage.Classes["hdd"] = s
+	}
+	if v := os.Getenv("DS3SQL_STORAGE_HDD_ENDPOINT"); v != "" {
+		if cfg.Storage.Classes == nil {
+			cfg.Storage.Classes = make(map[string]StorageClassConfig)
+		}
+		s := cfg.Storage.Classes["hdd"]
+		s.Endpoint = v
+		cfg.Storage.Classes["hdd"] = s
 	}
 
 	return cfg, nil
