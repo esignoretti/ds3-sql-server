@@ -157,7 +157,7 @@ func testStoreConformance(t *testing.T, newStore storeFactory) {
 		if err != nil || len(list) != 1 {
 			t.Fatalf("ListSchedules: %v len=%d", err, len(list))
 		}
-		if err := s.DeleteSchedule(ctx, "s1"); err != nil {
+		if err := s.DeleteSchedule(ctx, "s1", "p1"); err != nil {
 			t.Fatalf("DeleteSchedule: %v", err)
 		}
 		if _, err := s.GetSchedule(ctx, "s1"); err != ErrNotFound {

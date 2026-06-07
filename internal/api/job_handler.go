@@ -137,6 +137,22 @@ func (h *JobHandler) Get(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(j)
 }
 
+// GetForProject gets a job by ID after verifying it belongs to the caller's project.
+func (h *JobHandler) GetForProject(w http.ResponseWriter, r *http.Request, projectID string) {
+	id := chi.URLParam(r, "id")
+	j, ok := h.mgr.Get(id)
+	if !ok {
+		http.Error(w, `{"error":"job not found"}`, http.StatusNotFound)
+		return
+	}
+	if j.ProjectID != projectID {
+		http.Error(w, `{"error":"job not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(j)
+}
+
 // ListForProject returns recent jobs for the project (query history).
 func (h *JobHandler) ListForProject(w http.ResponseWriter, r *http.Request, projectID string) {
 	limit := 100
@@ -148,6 +164,25 @@ func (h *JobHandler) ListForProject(w http.ResponseWriter, r *http.Request, proj
 // Cancel cancels a running/queued job.
 func (h *JobHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if !h.mgr.Cancel(id) {
+		http.Error(w, `{"error":"job not found or already finished"}`, http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// CancelForProject cancels a job after verifying it belongs to the caller's project.
+func (h *JobHandler) CancelForProject(w http.ResponseWriter, r *http.Request, projectID string) {
+	id := chi.URLParam(r, "id")
+	j, ok := h.mgr.Get(id)
+	if !ok {
+		http.Error(w, `{"error":"job not found"}`, http.StatusNotFound)
+		return
+	}
+	if j.ProjectID != projectID {
+		http.Error(w, `{"error":"job not found"}`, http.StatusNotFound)
+		return
+	}
 	if !h.mgr.Cancel(id) {
 		http.Error(w, `{"error":"job not found or already finished"}`, http.StatusNotFound)
 		return

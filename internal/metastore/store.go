@@ -117,7 +117,7 @@ type Store interface {
 	CreateSchedule(ctx context.Context, sch *Schedule) error
 	ListSchedules(ctx context.Context, projectID string) ([]*Schedule, error)
 	GetSchedule(ctx context.Context, id string) (*Schedule, error)
-	DeleteSchedule(ctx context.Context, id string) error
+	DeleteSchedule(ctx context.Context, id, projectID string) error
 	UpdateScheduleRun(ctx context.Context, id string, lastRun time.Time, running bool) error
 	GetDueSchedules(ctx context.Context, now time.Time) ([]*Schedule, error)
 	SetScheduleNextRun(ctx context.Context, id string, next time.Time) error

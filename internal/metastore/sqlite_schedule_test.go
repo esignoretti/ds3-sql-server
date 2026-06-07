@@ -78,7 +78,7 @@ func TestScheduleCRUD(t *testing.T) {
 		t.Fatalf("expected sch-2 to be due, got %+v", dueList)
 	}
 
-	if err := s.DeleteSchedule(ctx, "sch-1"); err != nil {
+	if err := s.DeleteSchedule(ctx, "sch-1", "p1"); err != nil {
 		t.Fatalf("DeleteSchedule: %v", err)
 	}
 	if _, err := s.GetSchedule(ctx, "sch-1"); err != ErrNotFound {

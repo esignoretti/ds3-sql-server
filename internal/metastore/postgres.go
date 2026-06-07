@@ -527,8 +527,8 @@ func (s *PostgresStore) GetSchedule(ctx context.Context, id string) (*Schedule, 
 	return sc, nil
 }
 
-func (s *PostgresStore) DeleteSchedule(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM schedules WHERE id = $1`, id)
+func (s *PostgresStore) DeleteSchedule(ctx context.Context, id, projectID string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM schedules WHERE id = $1 AND project_id = $2`, id, projectID)
 	if err != nil {
 		return fmt.Errorf("delete schedule: %w", err)
 	}

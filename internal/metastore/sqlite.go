@@ -525,8 +525,8 @@ func (s *SQLiteStore) SetScheduleNextRun(ctx context.Context, id string, next ti
 	return err
 }
 
-func (s *SQLiteStore) DeleteSchedule(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM schedules WHERE id = ?`, id)
+func (s *SQLiteStore) DeleteSchedule(ctx context.Context, id, projectID string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM schedules WHERE id = ? AND project_id = ?`, id, projectID)
 	if err != nil {
 		return fmt.Errorf("delete schedule: %w", err)
 	}

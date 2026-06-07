@@ -416,17 +416,23 @@ func main() {
 		// Dataset routes
 		r.Post("/datasets", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				datasetHandler.CreateForProject(w, r, p.ProjectID)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					datasetHandler.CreateForProject(w, r, p.ProjectID)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
 		r.Get("/datasets", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				datasetHandler.ListForProject(w, r, p.ProjectID)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					datasetHandler.ListForProject(w, r, p.ProjectID)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
@@ -434,34 +440,46 @@ func main() {
 		// Table routes
 		r.Post("/datasets/{dataset}/tables", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				tableHandler.RegisterForProject(w, r, p.ProjectID, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					tableHandler.RegisterForProject(w, r, p.ProjectID, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
 		r.Get("/datasets/{dataset}/tables", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				tableHandler.ListForProject(w, r, p.ProjectID)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					tableHandler.ListForProject(w, r, p.ProjectID)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
 		r.Get("/datasets/{dataset}/tables/{table}", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				tableHandler.DescribeForProject(w, r, p.ProjectID)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					tableHandler.DescribeForProject(w, r, p.ProjectID)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
 		r.Delete("/datasets/{dataset}/tables/{table}", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				deleter := &credsDeleter{accessKey: p.AccessKey, secretKey: p.SecretKey, endpoint: session.GatewayEndpoint}
-				tableHandler.DropWithDeps(w, r, p.ProjectID, deleter, metaStore, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					deleter := &credsDeleter{accessKey: p.AccessKey, secretKey: p.SecretKey, endpoint: session.GatewayEndpoint}
+					tableHandler.DropWithDeps(w, r, p.ProjectID, deleter, metaStore, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
@@ -482,17 +500,23 @@ func main() {
 		// Job routes
 		r.Get("/jobs", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				jobHandler.ListForProject(w, r, p.ProjectID)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					jobHandler.ListForProject(w, r, p.ProjectID)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
 		r.Post("/jobs", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				jobHandler.SubmitWithCreds(w, r, p.ProjectID, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					jobHandler.SubmitWithCreds(w, r, p.ProjectID, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
@@ -500,25 +524,34 @@ func main() {
 		// Schedule routes
 		r.Post("/schedules", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				scheduleHandler.CreateForProject(w, r, p.ProjectID, session.Email)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					scheduleHandler.CreateForProject(w, r, p.ProjectID, session.Email)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
 		r.Get("/schedules", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				scheduleHandler.ListForProject(w, r, p.ProjectID)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					scheduleHandler.ListForProject(w, r, p.ProjectID)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
 		r.Delete("/schedules/{id}", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
-				scheduleHandler.DeleteForProject(w, r, p.ProjectID)
-				return
+				if projectID == "" || p.ProjectID == projectID {
+					scheduleHandler.DeleteForProject(w, r, p.ProjectID)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
@@ -538,8 +571,28 @@ func main() {
 		r.Get("/convert/columns", columnHandler.ListConfigs)
 		r.Post("/convert/columns", columnHandler.SaveConfig)
 		r.Delete("/convert/columns/{bucket}/{pattern}", columnHandler.DeleteConfig)
-		r.Get("/jobs/{id}", jobHandler.Get)
-		r.Delete("/jobs/{id}", jobHandler.Cancel)
+		r.Get("/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
+			for _, p := range session.Projects {
+				if projectID == "" || p.ProjectID == projectID {
+					jobHandler.GetForProject(w, r, p.ProjectID)
+					return
+				}
+			}
+			http.Error(w, `{"error":"project not found"}`, http.StatusNotFound)
+		})
+		r.Delete("/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
+			for _, p := range session.Projects {
+				if projectID == "" || p.ProjectID == projectID {
+					jobHandler.CancelForProject(w, r, p.ProjectID)
+					return
+				}
+			}
+			http.Error(w, `{"error":"project not found"}`, http.StatusNotFound)
+		})
 	})
 
 	// Web UI

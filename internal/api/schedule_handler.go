@@ -18,7 +18,7 @@ import (
 type ScheduleStore interface {
 	CreateSchedule(ctx context.Context, sch *metastore.Schedule) error
 	ListSchedules(ctx context.Context, projectID string) ([]*metastore.Schedule, error)
-	DeleteSchedule(ctx context.Context, id string) error
+	DeleteSchedule(ctx context.Context, id, projectID string) error
 }
 
 type ScheduleHandler struct {
@@ -82,7 +82,7 @@ func (h *ScheduleHandler) ListForProject(w http.ResponseWriter, r *http.Request,
 
 func (h *ScheduleHandler) DeleteForProject(w http.ResponseWriter, r *http.Request, projectID string) {
 	id := chi.URLParam(r, "id")
-	if err := h.store.DeleteSchedule(r.Context(), id); err != nil {
+	if err := h.store.DeleteSchedule(r.Context(), id, projectID); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, metastore.ErrNotFound) {
 			status = http.StatusNotFound

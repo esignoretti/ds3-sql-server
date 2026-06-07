@@ -22,7 +22,7 @@ func (s *scheduleStoreStub) CreateSchedule(ctx context.Context, sch *metastore.S
 func (s *scheduleStoreStub) ListSchedules(ctx context.Context, projectID string) ([]*metastore.Schedule, error) {
 	return s.created, nil
 }
-func (s *scheduleStoreStub) DeleteSchedule(ctx context.Context, id string) error { return nil }
+func (s *scheduleStoreStub) DeleteSchedule(ctx context.Context, id, projectID string) error { return nil }
 
 func TestScheduleHandler_CreateListDelete(t *testing.T) {
 	stub := &scheduleStoreStub{}
