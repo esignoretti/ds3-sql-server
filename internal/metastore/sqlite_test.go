@@ -63,3 +63,65 @@ func TestDatasetCRUD(t *testing.T) {
 		t.Fatalf("expected 1 dataset for p1, got %d", len(list))
 	}
 }
+
+func sampleTable() *Table {
+	return &Table{
+		ProjectID:        "p1",
+		Dataset:          "sales",
+		Name:             "orders",
+		Kind:             "external",
+		Location:         "s3://bucket/orders/*.parquet",
+		Format:           "parquet",
+		StorageClass:     "hdd",
+		PartitionColumns: []string{"dt"},
+		Schema:           []Column{{Name: "id", Type: "BIGINT", Nullable: false}},
+		Stats:            Stats{RowCount: 42},
+		DataVersion:      1,
+	}
+}
+
+func TestTableCRUD(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if err := s.CreateTable(ctx, sampleTable()); err != nil {
+		t.Fatalf("CreateTable: %v", err)
+	}
+	if err := s.CreateTable(ctx, sampleTable()); err == nil {
+		t.Fatal("expected error on duplicate table")
+	}
+
+	got, err := s.GetTable(ctx, "p1", "sales", "orders")
+	if err != nil {
+		t.Fatalf("GetTable: %v", err)
+	}
+	if got.Format != "parquet" || len(got.Schema) != 1 || got.Schema[0].Name != "id" {
+		t.Fatalf("schema round-trip failed: %+v", got)
+	}
+	if len(got.PartitionColumns) != 1 || got.PartitionColumns[0] != "dt" {
+		t.Fatalf("partition columns round-trip failed: %+v", got.PartitionColumns)
+	}
+	if got.Stats.RowCount != 42 {
+		t.Fatalf("stats round-trip failed: %+v", got.Stats)
+	}
+
+	list, err := s.ListTables(ctx, "p1", "sales")
+	if err != nil || len(list) != 1 {
+		t.Fatalf("ListTables: err=%v len=%d", err, len(list))
+	}
+
+	v, err := s.BumpDataVersion(ctx, "p1", "sales", "orders")
+	if err != nil {
+		t.Fatalf("BumpDataVersion: %v", err)
+	}
+	if v != 2 {
+		t.Fatalf("expected version 2, got %d", v)
+	}
+
+	if err := s.DeleteTable(ctx, "p1", "sales", "orders"); err != nil {
+		t.Fatalf("DeleteTable: %v", err)
+	}
+	if _, err := s.GetTable(ctx, "p1", "sales", "orders"); err != ErrNotFound {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+}
