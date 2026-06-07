@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -12,6 +13,18 @@ import (
 // MetastoreConfig holds settings for the embedded SQLite metastore.
 type MetastoreConfig struct {
 	Path string `yaml:"path"`
+}
+
+// StorageClassConfig maps a logical storage class to a real DS3 bucket + endpoint.
+// An empty Endpoint means "use the session's gateway endpoint".
+type StorageClassConfig struct {
+	Bucket   string `yaml:"bucket"`
+	Endpoint string `yaml:"endpoint"`
+}
+
+// StorageConfig holds the storage-class → bucket map used by the write path.
+type StorageConfig struct {
+	Classes map[string]StorageClassConfig `yaml:"classes"`
 }
 
 type Config struct {
@@ -25,6 +38,8 @@ type Config struct {
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
 
 	Metastore MetastoreConfig `yaml:"metastore"`
+
+	Storage StorageConfig `yaml:"storage"`
 }
 
 type AuthConfig struct {
@@ -69,6 +84,12 @@ func Default() *Config {
 		Metastore: MetastoreConfig{
 			Path: defaultMetastorePath(),
 		},
+		Storage: StorageConfig{
+			Classes: map[string]StorageClassConfig{
+				"ssd": {Bucket: "ds3-fast", Endpoint: ""},
+				"hdd": {Bucket: "ds3-cold", Endpoint: ""},
+			},
+		},
 	}
 }
 
@@ -78,6 +99,16 @@ func defaultMetastorePath() string {
 		return "metastore.db"
 	}
 	return home + "/.ds3sql/metastore.db"
+}
+
+// ResolveStorageClass returns the configured bucket/endpoint for a logical class
+// name (e.g. "ssd"/"hdd"). The bool is false when the class is not configured.
+func (c *Config) ResolveStorageClass(name string) (StorageClassConfig, bool) {
+	if c.Storage.Classes == nil {
+		return StorageClassConfig{}, false
+	}
+	sc, ok := c.Storage.Classes[name]
+	return sc, ok
 }
 
 func Load(path string) (*Config, error) {
