@@ -70,10 +70,10 @@ func (d *credsDeleter) DeletePrefix(ctx context.Context, bucket, prefix string) 
 // flag when the job finishes.
 type schedulerEnqueuer struct {
 	mgr   *job.Manager
-	store *metastore.SQLiteStore
+	store metastore.Store
 }
 
-func newSchedulerEnqueuer(mgr *job.Manager, store *metastore.SQLiteStore) *schedulerEnqueuer {
+func newSchedulerEnqueuer(mgr *job.Manager, store metastore.Store) *schedulerEnqueuer {
 	return &schedulerEnqueuer{mgr: mgr, store: store}
 }
 
@@ -203,13 +203,29 @@ func main() {
 	}
 	columnHandler := api.NewColumnHandler(columnStore)
 
-	// Metastore, catalog service, and job manager
-	if dir := filepath.Dir(cfg.Metastore.Path); dir != "" {
-		os.MkdirAll(dir, 0755)
-	}
-	metaStore, err := metastore.OpenSQLite(cfg.Metastore.Path)
-	if err != nil {
-		log.Fatalf("failed to init metastore: %v", err)
+	// Metastore: embedded SQLite (default) or external Postgres (opt-in).
+	var metaStore metastore.Store
+	switch cfg.Metastore.Driver {
+	case "", "sqlite":
+		if dir := filepath.Dir(cfg.Metastore.Path); dir != "" {
+			os.MkdirAll(dir, 0755)
+		}
+		s, err := metastore.OpenSQLite(cfg.Metastore.Path)
+		if err != nil {
+			log.Fatalf("failed to init sqlite metastore: %v", err)
+		}
+		metaStore = s
+	case "postgres":
+		if cfg.Metastore.DSN == "" {
+			log.Fatalf("metastore driver 'postgres' requires metastore.dsn (DS3SQL_METASTORE_DSN)")
+		}
+		s, err := metastore.OpenPostgres(cfg.Metastore.DSN)
+		if err != nil {
+			log.Fatalf("failed to init postgres metastore: %v", err)
+		}
+		metaStore = s
+	default:
+		log.Fatalf("unknown metastore driver %q (want sqlite|postgres)", cfg.Metastore.Driver)
 	}
 	defer metaStore.Close()
 	catService := catalog.NewService(metaStore, queryEngine)

@@ -120,6 +120,7 @@ type Store interface {
 	DeleteSchedule(ctx context.Context, id string) error
 	UpdateScheduleRun(ctx context.Context, id string, lastRun time.Time, running bool) error
 	GetDueSchedules(ctx context.Context, now time.Time) ([]*Schedule, error)
+	SetScheduleNextRun(ctx context.Context, id string, next time.Time) error
 
 	Close() error
 }

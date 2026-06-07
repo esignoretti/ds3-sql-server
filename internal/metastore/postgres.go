@@ -538,6 +538,13 @@ func (s *PostgresStore) DeleteSchedule(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *PostgresStore) SetScheduleNextRun(ctx context.Context, id string, next time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE schedules SET next_run_at = $1 WHERE id = $2`,
+		nullTime(next), id)
+	return err
+}
+
 func (s *PostgresStore) UpdateScheduleRun(ctx context.Context, id string, lastRun time.Time, running bool) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE schedules SET last_run_at = $1, running = $2 WHERE id = $3`,

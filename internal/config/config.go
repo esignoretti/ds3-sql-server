@@ -11,9 +11,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// MetastoreConfig holds settings for the embedded SQLite metastore.
+// MetastoreConfig holds settings for the metadata store. Driver selects the
+// backend: "sqlite" (embedded, default) or "postgres" (opt-in, HA-capable).
 type MetastoreConfig struct {
-	Path string `yaml:"path"`
+	Driver string `yaml:"driver"`
+	Path   string `yaml:"path"` // used when driver == "sqlite"
+	DSN    string `yaml:"dsn"`  // used when driver == "postgres"
 }
 
 // ClusterConfig configures the static worker pool and coordinator↔worker auth.
@@ -103,7 +106,8 @@ func Default() *Config {
 			QueriesPerMinute: 10,
 		},
 		Metastore: MetastoreConfig{
-			Path: defaultMetastorePath(),
+			Driver: "sqlite",
+			Path:   defaultMetastorePath(),
 		},
 		Cluster: ClusterConfig{
 			Workers:      nil,
@@ -205,6 +209,12 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("DS3SQL_METASTORE_PATH"); v != "" {
 		cfg.Metastore.Path = v
+	}
+	if v := os.Getenv("DS3SQL_METASTORE_DRIVER"); v != "" {
+		cfg.Metastore.Driver = v
+	}
+	if v := os.Getenv("DS3SQL_METASTORE_DSN"); v != "" {
+		cfg.Metastore.DSN = v
 	}
 
 	// Cluster env overrides

@@ -75,6 +75,28 @@ func TestDefault_Phase2Sections(t *testing.T) {
 	}
 }
 
+func TestDefault_MetastoreDriver(t *testing.T) {
+	c := Default()
+	if c.Metastore.Driver != "sqlite" {
+		t.Fatalf("expected default driver 'sqlite', got %q", c.Metastore.Driver)
+	}
+}
+
+func TestLoad_MetastoreDriverAndDSNEnv(t *testing.T) {
+	t.Setenv("DS3SQL_METASTORE_DRIVER", "postgres")
+	t.Setenv("DS3SQL_METASTORE_DSN", "postgres://u:p@h/db")
+	c, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Metastore.Driver != "postgres" {
+		t.Fatalf("driver env override not applied: %q", c.Metastore.Driver)
+	}
+	if c.Metastore.DSN != "postgres://u:p@h/db" {
+		t.Fatalf("dsn env override not applied: %q", c.Metastore.DSN)
+	}
+}
+
 func TestLoad_ClusterEnvOverrides(t *testing.T) {
 	t.Setenv("DS3SQL_CLUSTER_WORKERS", "http://w1:8080,http://w2:8080")
 	t.Setenv("DS3SQL_CLUSTER_SHARED_SECRET", "sekret")
