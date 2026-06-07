@@ -494,8 +494,10 @@ func main() {
 			projectID := r.URL.Query().Get("project")
 			for _, p := range session.Projects {
 				if projectID == "" || p.ProjectID == projectID {
-					deleter := &credsDeleter{accessKey: p.AccessKey, secretKey: p.SecretKey, endpoint: session.GatewayEndpoint}
-					tableHandler.DropWithDeps(w, r, p.ProjectID, deleter, metaStore, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
+					// For external tables (registered from browse), a simple DropForProject
+					// is sufficient. Managed tables (CTAS/load) also have their data deleted
+					// via DropWithDeps, but the UI delete uses this simpler path.
+					tableHandler.DropForProject(w, r, p.ProjectID)
 					return
 				}
 			}
