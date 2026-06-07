@@ -3,6 +3,7 @@ package write
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/esignoretti/ds3-sql-server/internal/catalog"
@@ -38,23 +39,35 @@ type writeEngine interface {
 	ExecWrite(sql string, bindings []query.ViewBinding, ak, sk, ep string) error
 }
 
+// prefixDeleter clears all objects under a managed location's prefix.
+type prefixDeleter interface {
+	DeletePrefix(ctx context.Context, bucket, prefix string) error
+}
+
 // Writer executes write jobs (CTAS, load) against the managed catalog.
 type Writer struct {
-	engine  writeEngine
-	cat     catalogService
-	store   versionBumper
-	cache   cacheInvalidator
-	storage storageResolver
+	engine    writeEngine
+	cat       catalogService
+	store     versionBumper
+	cache     cacheInvalidator
+	storage   storageResolver
+	deleter   prefixDeleter
+	localBase string // test-only: when set, managed locations are local dirs
 }
 
-// NewWriter builds a Writer. Any of store/cache may be nil-tolerant only in
-// tests; production wiring always supplies all dependencies.
-func NewWriter(engine writeEngine, cat catalogService, store versionBumper, cache cacheInvalidator, storage storageResolver) *Writer {
-	return &Writer{engine: engine, cat: cat, store: store, cache: cache, storage: storage}
+// NewWriter builds a Writer. Any of store/cache/deleter may be nil-tolerant only
+// in tests; production wiring always supplies all dependencies.
+func NewWriter(engine writeEngine, cat catalogService, store versionBumper, cache cacheInvalidator, storage storageResolver, deleter prefixDeleter) *Writer {
+	return &Writer{engine: engine, cat: cat, store: store, cache: cache, storage: storage, deleter: deleter}
 }
 
-// managedLocation returns the base S3 prefix for a managed table's data files.
+// managedLocation returns the base location for a managed table's data files.
+// In tests localBase makes this a filesystem directory; in production it is an
+// s3:// prefix under the storage-class bucket.
 func (w *Writer) managedLocation(bucket, dataset, table string) string {
+	if w.localBase != "" {
+		return filepath.Join(w.localBase, "_managed", dataset, table)
+	}
 	return fmt.Sprintf("s3://%s/_managed/%s/%s/", bucket, dataset, table)
 }
 
@@ -74,3 +87,18 @@ func (w *Writer) afterWrite(ctx context.Context, projectID, dataset, table strin
 
 // escapeLiteral escapes single quotes for embedding a value in SQL.
 func escapeLiteral(s string) string { return strings.ReplaceAll(s, "'", "''") }
+
+// splitS3 splits an "s3://bucket/key/prefix" into (bucket, "key/prefix"). The
+// returned ok is false for non-s3 locations (e.g. external local globs).
+func splitS3(location string) (bucket, prefix string, ok bool) {
+	const scheme = "s3://"
+	if !strings.HasPrefix(location, scheme) {
+		return "", "", false
+	}
+	rest := location[len(scheme):]
+	idx := strings.IndexByte(rest, '/')
+	if idx < 0 {
+		return rest, "", true
+	}
+	return rest[:idx], rest[idx+1:], true
+}

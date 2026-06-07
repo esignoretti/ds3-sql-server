@@ -1,9 +1,15 @@
 package write
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/esignoretti/ds3-sql-server/internal/catalog"
+	"github.com/esignoretti/ds3-sql-server/internal/metastore"
 )
 
 // CTASPlan is the parsed form of a CREATE TABLE ... AS SELECT statement.
@@ -66,4 +72,82 @@ func ParseCTAS(sql string) (CTASPlan, error) {
 		return CTASPlan{}, fmt.Errorf("CTAS inner statement must be a SELECT")
 	}
 	return plan, nil
+}
+
+// RunCTAS parses, executes, and registers a CREATE TABLE ... AS SELECT.
+func (w *Writer) RunCTAS(ctx context.Context, projectID, sql, accessKey, secretKey, endpoint string) (*metastore.Table, error) {
+	plan, err := ParseCTAS(sql)
+	if err != nil {
+		return nil, err
+	}
+	storageClass := plan.StorageClass
+	if storageClass == "" {
+		storageClass = "ssd" // managed default tier
+	}
+	bucket := ""
+	if w.storage != nil {
+		b, _, ok := w.storage.Resolve(storageClass)
+		if !ok {
+			return nil, fmt.Errorf("unknown storage class %q", storageClass)
+		}
+		bucket = b
+	}
+	location := w.managedLocation(bucket, plan.Dataset, plan.Table)
+
+	// Resolve source catalog tables referenced by the inner SELECT.
+	bindings, err := w.cat.Resolve(ctx, projectID, plan.Select)
+	if err != nil {
+		return nil, fmt.Errorf("resolve sources: %w", err)
+	}
+
+	// Ensure the parent directory exists for local paths so DuckDB can create
+	// the leaf directory and write files into it.
+	if !strings.HasPrefix(location, "s3://") {
+		if err := os.MkdirAll(filepath.Dir(location), 0755); err != nil {
+			return nil, fmt.Errorf("create target parent dir: %w", err)
+		}
+	}
+
+	// Build COPY (<select>) TO '<location>' (FORMAT PARQUET [, PARTITION_BY (...)]).
+	copyOpts := "FORMAT PARQUET"
+	if len(plan.PartitionBy) > 0 {
+		quoted := make([]string, len(plan.PartitionBy))
+		for i, c := range plan.PartitionBy {
+			quoted[i] = c
+		}
+		copyOpts += ", PARTITION_BY (" + strings.Join(quoted, ", ") + "), OVERWRITE_OR_IGNORE"
+	}
+	copySQL := fmt.Sprintf("COPY (%s) TO '%s' (%s)", plan.Select, escapeLiteral(location), copyOpts)
+	if err := w.engine.ExecWrite(copySQL, bindings, accessKey, secretKey, endpoint); err != nil {
+		return nil, fmt.Errorf("ctas copy: %w", err)
+	}
+
+	// Probe reader for schema/stats inference over the written files.
+	probe := ctasProbeReader(location, len(plan.PartitionBy) > 0)
+	tbl, err := w.cat.RegisterManaged(ctx, catalog.RegisterManagedInput{
+		ProjectID:        projectID,
+		Dataset:          plan.Dataset,
+		Name:             plan.Table,
+		Location:         location,
+		ProbeReader:      probe,
+		StorageClass:     storageClass,
+		PartitionColumns: plan.PartitionBy,
+	}, accessKey, secretKey, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	if err := w.afterWrite(ctx, projectID, plan.Dataset, plan.Table); err != nil {
+		return nil, err
+	}
+	return tbl, nil
+}
+
+// ctasProbeReader returns a read_parquet(...) expression covering the written
+// files. Partitioned output lives in nested dt=.../ dirs and needs the glob +
+// hive_partitioning flag so the partition columns appear in the schema.
+func ctasProbeReader(location string, partitioned bool) string {
+	if partitioned {
+		return fmt.Sprintf("read_parquet('%s/**/*.parquet', hive_partitioning=true)", escapeLiteral(location))
+	}
+	return fmt.Sprintf("read_parquet('%s/*.parquet')", escapeLiteral(location))
 }
