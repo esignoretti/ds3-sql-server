@@ -19,9 +19,12 @@ import (
 	"github.com/esignoretti/ds3-sql-server/internal/analysis"
 	"github.com/esignoretti/ds3-sql-server/internal/api"
 	"github.com/esignoretti/ds3-sql-server/internal/auth"
+	"github.com/esignoretti/ds3-sql-server/internal/catalog"
 	"github.com/esignoretti/ds3-sql-server/internal/column"
 	"github.com/esignoretti/ds3-sql-server/internal/config"
 	"github.com/esignoretti/ds3-sql-server/internal/convert"
+	"github.com/esignoretti/ds3-sql-server/internal/job"
+	"github.com/esignoretti/ds3-sql-server/internal/metastore"
 	"github.com/esignoretti/ds3-sql-server/internal/query"
 	"github.com/esignoretti/ds3-sql-server/internal/report"
 	"github.com/esignoretti/ds3-sql-server/internal/s3"
@@ -30,11 +33,16 @@ import (
 
 func main() {
 	port := flag.Int("port", 0, "Listening port (overrides config)")
+	roleFlag := flag.String("role", "", "Node role: all (default), coordinator, worker")
 	flag.Parse()
 
 	cfg, err := config.Load("")
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
+	}
+
+	if *roleFlag != "" {
+		cfg.Role = *roleFlag
 	}
 
 	if *port != 0 {
@@ -102,6 +110,29 @@ func main() {
 		log.Fatalf("failed to init column store: %v", err)
 	}
 	columnHandler := api.NewColumnHandler(columnStore)
+
+	// Metastore, catalog service, and job manager
+	metaStore, err := metastore.OpenSQLite(cfg.Metastore.Path)
+	if err != nil {
+		log.Fatalf("failed to init metastore: %v", err)
+	}
+	defer metaStore.Close()
+	catService := catalog.NewService(metaStore, queryEngine)
+	localExecutor := job.NewLocalExecutor(catService, queryEngine)
+	jobManager := job.NewManager(localExecutor)
+
+	datasetHandler := api.NewDatasetHandler(catService)
+	tableHandler := api.NewTableHandler(catService)
+	jobHandler := api.NewJobHandler(jobManager)
+
+	// Periodic job cleanup
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			jobManager.Cleanup(30 * time.Minute)
+		}
+	}()
 
 	// Conversion engine
 	workers := 4
@@ -193,6 +224,68 @@ func main() {
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
+
+		// Dataset routes
+		r.Post("/datasets", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				datasetHandler.CreateForProject(w, r, p.ProjectID)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+		r.Get("/datasets", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				datasetHandler.ListForProject(w, r, p.ProjectID)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+
+		// Table routes
+		r.Post("/datasets/{dataset}/tables", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				tableHandler.RegisterForProject(w, r, p.ProjectID, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+		r.Get("/datasets/{dataset}/tables", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				tableHandler.ListForProject(w, r, p.ProjectID)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+		r.Get("/datasets/{dataset}/tables/{table}", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				tableHandler.DescribeForProject(w, r, p.ProjectID)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+		r.Delete("/datasets/{dataset}/tables/{table}", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				tableHandler.DropForProject(w, r, p.ProjectID)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+
+		// Job routes
+		r.Post("/jobs", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				jobHandler.SubmitWithCreds(w, r, p.ProjectID, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
 	})
 
 	// Protected group (no timeout — long-running operations)
@@ -209,6 +302,7 @@ func main() {
 		r.Get("/convert/columns", columnHandler.ListConfigs)
 		r.Post("/convert/columns", columnHandler.SaveConfig)
 		r.Delete("/convert/columns/{bucket}/{pattern}", columnHandler.DeleteConfig)
+		r.Get("/jobs/{id}", jobHandler.Get)
 	})
 
 	// Web UI

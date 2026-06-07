@@ -61,6 +61,18 @@ func (s *Store) Save(cfg *ColumnConfig) error {
 		cfg.CreatedAt = time.Now()
 	}
 	cfg.UpdatedAt = time.Now()
+
+	// If profile_name is set, delete any existing config with the same bucket + profile_name
+	// so the new save overwrites it regardless of pattern.
+	if cfg.ProfileName != "" {
+		existing, _ := s.List(cfg.Bucket)
+		for _, e := range existing {
+			if e.ProfileName == cfg.ProfileName {
+				s.Delete(e.Bucket, e.Pattern)
+			}
+		}
+	}
+
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal column config: %w", err)

@@ -44,20 +44,23 @@ func (e *Engine) InferSchema(path, accessKey, secretKey, rawEndpoint string) *Sc
 	for rows.Next() {
 		var (
 			colName    string
-			colType    string
+			colType    sql.NullString
 			colNull    string
-			colKey     string
-			colDefault *string
-			colExtra   *string
+			colKey     sql.NullString
+			colDefault sql.NullString
+			colExtra   sql.NullString
 		)
 		if err := rows.Scan(&colName, &colType, &colNull, &colKey, &colDefault, &colExtra); err != nil {
 			continue
 		}
 		columns = append(columns, SchemaColumn{
 			Name:     colName,
-			Type:     colType,
+			Type:     colType.String,
 			Nullable: colNull == "YES",
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return &SchemaResult{Error: err.Error(), ElapsedMs: time.Since(start).Milliseconds()}
 	}
 
 	return &SchemaResult{

@@ -1,7 +1,7 @@
 // Tab Manager for Multi-Tab Workflow UI — DS3 SQL Server
 var tabState = {
   browse: { project: null, bucket: null, prefix: '', selectedFiles: [] },
-  transform: { configs: {}, activeFile: null },
+  transform: { configs: {}, activeFile: null, pendingBucket: null, pendingFile: null },
   query: { sql: '', results: null, currentPage: 0, pageSize: 100 },
   analyze: { analysisCache: null, selectedCols: [] },
   report: { title: '', charts: [], savedId: null }
@@ -25,14 +25,73 @@ function switchTab(tabName) {
 
   if (tabName === 'analyze') renderAnalyzeTab();
   if (tabName === 'report') renderReportTab();
+  if (tabName === 'transform') renderTransformTab();
+}
+
+function renderTransformTab() {
+  var list = document.getElementById('transform-file-list');
+  var configArea = document.getElementById('transform-config-area');
+  if (!list) return;
+
+  var files = tabState.browse.selectedFiles;
+  var convertible = files.filter(function(p) { return !isQueryable(p); });
+
+  if (!convertible.length && !tabState.transform.pendingFile) {
+    list.innerHTML = '<p style="color:var(--text-muted);">No convertible files selected. <a href="#" onclick="switchTab(\'browse\');return false;">Go to Browse</a> to select files.</p>';
+    if (configArea) configArea.style.display = 'none';
+    return;
+  }
+
+  var html = '<div style="font-size:0.85rem;margin-bottom:0.5rem;color:var(--text-muted);">Selected files to convert:</div>' +
+    '<ul style="font-size:0.8rem;color:var(--text);">';
+  convertible.forEach(function(p) {
+    var name = p.split('/').pop();
+    html += '<li style="margin-bottom:0.15rem;">' + escHtml(name) + '</li>';
+  });
+  html += '</ul>';
+  html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">Configure column parsing below, then click Save & Convert.</div>';
+  list.innerHTML = html;
+
+  // Determine which file to configure
+  var bucket = tabState.browse.bucket || tabState.transform.pendingBucket;
+  var fileKey = tabState.transform.pendingFile;
+  if (!fileKey && convertible.length) {
+    var firstPath = convertible[0];
+    fileKey = firstPath.replace(/^s3:\/\/[^\/]+\//, '');
+  }
+
+  if (fileKey && typeof loadPreview === 'function' && bucket) {
+    if (configArea) configArea.style.display = 'block';
+    configArea.innerHTML = '<div id="config-app"></div>';
+    loadPreview(bucket, fileKey);
+    tabState.transform.pendingBucket = null;
+    tabState.transform.pendingFile = null;
+  }
+}
+
+function configureFile(bucket, fileKey) {
+  // Ensure file is selected
+  var s3path = 's3://' + bucket + '/' + fileKey;
+  if (tabState.browse.selectedFiles.indexOf(s3path) < 0) {
+    tabState.browse.selectedFiles.push(s3path);
+    updateTabBadges();
+    if (typeof updateBadge === 'function') updateBadge();
+    if (typeof updateBrowseActions === 'function') updateBrowseActions();
+  }
+  // Set pending for transform tab
+  tabState.transform.pendingBucket = bucket;
+  tabState.transform.pendingFile = fileKey;
+  switchTab('transform');
+}
+
+function isQueryable(f) {
+  var l = f.toLowerCase();
+  return l.endsWith('.parquet') || l.endsWith('.csv') || l.endsWith('.json') || l.endsWith('.jsonl') || l.endsWith('.tsv');
 }
 
 function updateTabBadges() {
   var browse = tabState.browse;
-  var hasConvertible = browse.selectedFiles.some(function(f) {
-    var l = f.toLowerCase();
-    return l.endsWith('.log') || l.endsWith('.txt') || l.endsWith('.syslog') || l.endsWith('.out') || l.endsWith('.err');
-  });
+  var hasConvertible = browse.selectedFiles.some(function(f) { return !isQueryable(f); });
 
   var browseBadge = document.querySelector('.tab[data-tab="browse"] .tab-badge');
   if (browseBadge) browseBadge.textContent = browse.selectedFiles.length || '';
@@ -61,10 +120,7 @@ function updateTabBadges() {
 function getNextStep() {
   var browse = tabState.browse;
   if (!browse.selectedFiles.length) return null;
-  var hasConvertible = browse.selectedFiles.some(function(f) {
-    var l = f.toLowerCase();
-    return l.endsWith('.log') || l.endsWith('.txt') || l.endsWith('.syslog') || l.endsWith('.out') || l.endsWith('.err');
-  });
+  var hasConvertible = browse.selectedFiles.some(function(f) { return !isQueryable(f); });
   if (hasConvertible) return 'transform';
   if (!tabState.query.results) return 'query';
   if (!tabState.analyze.analysisCache) return 'analyze';

@@ -568,11 +568,20 @@ function saveAndConvert() {
   var profileInput = document.getElementById('profile-name');
   if (profileInput) currentConfig.profile_name = profileInput.value;
 
-  var params = new URLSearchParams(window.location.search);
-  var file = params.get('file');
-  if (!file) { alert('No file specified'); return; }
-  var projectId = params.get('project') || selProject;
+  // Use tabState when available (SPA mode), fall back to URL params
+  var file;
+  var projectId;
   var bucket = currentConfig.bucket;
+  if (typeof tabState !== 'undefined' && tabState.browse.project) {
+    var convertible = tabState.browse.selectedFiles.filter(function(p) { return !isQueryable(p); });
+    file = convertible.length ? convertible[0].replace(/^s3:\/\/[^\/]+\//, '') : null;
+    projectId = tabState.browse.project;
+  } else {
+    var params = new URLSearchParams(window.location.search);
+    file = params.get('file');
+    projectId = params.get('project') || selProject;
+  }
+  if (!file) { alert('No file specified'); return; }
 
   // Show progress in the target page
   var statusDiv = document.createElement('div');
