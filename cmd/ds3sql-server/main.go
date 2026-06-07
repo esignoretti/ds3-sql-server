@@ -30,12 +30,75 @@ import (
 	"github.com/esignoretti/ds3-sql-server/internal/query"
 	"github.com/esignoretti/ds3-sql-server/internal/report"
 	"github.com/esignoretti/ds3-sql-server/internal/s3"
+	"github.com/esignoretti/ds3-sql-server/internal/scheduler"
 	"github.com/esignoretti/ds3-sql-server/internal/web"
 	"github.com/esignoretti/ds3-sql-server/internal/worker"
+	"github.com/esignoretti/ds3-sql-server/internal/write"
 )
 
 // wireResolver adapts catalog.Service.Resolve to worker.WireResolver.
 type wireResolver struct{ cat *catalog.Service }
+
+// storageAdapter adapts config.Config.ResolveStorageClass → write.storageResolver.
+type storageAdapter struct {
+	cfg *config.Config
+}
+
+func (s storageAdapter) Resolve(class string) (string, string, bool) {
+	sc, ok := s.cfg.ResolveStorageClass(class)
+	if !ok {
+		return "", "", false
+	}
+	return sc.Bucket, sc.Endpoint, true
+}
+
+// credsDeleter satisfies catalog.PrefixDeleter by creating an s3.Client with
+// per-request credentials.
+type credsDeleter struct {
+	accessKey, secretKey, endpoint string
+}
+
+func (d *credsDeleter) DeletePrefix(ctx context.Context, bucket, prefix string) error {
+	client, err := s3.NewClient(ctx, d.accessKey, d.secretKey, d.endpoint)
+	if err != nil {
+		return err
+	}
+	return client.DeletePrefix(ctx, bucket, prefix)
+}
+
+// schedulerEnqueuer submits a schedule's SQL as a job and clears its Running
+// flag when the job finishes.
+type schedulerEnqueuer struct {
+	mgr   *job.Manager
+	store *metastore.SQLiteStore
+}
+
+func newSchedulerEnqueuer(mgr *job.Manager, store *metastore.SQLiteStore) *schedulerEnqueuer {
+	return &schedulerEnqueuer{mgr: mgr, store: store}
+}
+
+func (e *schedulerEnqueuer) Enqueue(sch *metastore.Schedule) {
+	typ := "query"
+	if write.IsCTAS(sch.SQL) {
+		typ = "ctas"
+	}
+	j := e.mgr.Submit(context.Background(), job.ExecRequest{
+		Type:      typ,
+		SQL:       sch.SQL,
+		ProjectID: sch.ProjectID,
+	})
+	go func() {
+		for {
+			cur, ok := e.mgr.Get(j.ID)
+			if ok && (cur.Status == "done" || cur.Status == "failed") {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		_ = e.store.UpdateScheduleRun(context.Background(), sch.ID, sch.LastRunAt, false)
+		_ = e.store.SetScheduleNextRun(context.Background(), sch.ID, sch.NextRunAt)
+	}()
+}
 
 func (w wireResolver) ResolveWire(ctx context.Context, projectID, sql string) ([]worker.WireBinding, error) {
 	bindings, err := w.cat.Resolve(ctx, projectID, sql)
@@ -201,9 +264,15 @@ func main() {
 	jobManager.SetSink(job.NewMetastoreSink(metaStore))
 	jobManager.SetQuota(cfg.Query.MaxConcurrentPerProject)
 
+	// Write path (CTAS, load, managed drop)
+	writeWriter := write.NewWriter(queryEngine, catService, metaStore, metaStore, storageAdapter{cfg: cfg}, nil /* deleter bound per-call */)
+	writeExecutor := job.NewLocalWriteExecutor(writeWriter)
+	jobManager.SetWriteExecutor(writeExecutor)
+
 	datasetHandler := api.NewDatasetHandler(catService)
 	tableHandler := api.NewTableHandler(catService)
 	jobHandler := api.NewJobHandler(jobManager)
+	scheduleHandler := api.NewScheduleHandler(metaStore)
 
 	// Worker data-plane server (role=worker): exposes /internal/execute guarded
 	// by the shared secret, fronted by a local-SSD data cache.
@@ -226,6 +295,15 @@ func main() {
 			jobManager.Cleanup(30 * time.Minute)
 		}
 	}()
+
+	// Scheduler runs only on the control plane (coordinator/all).
+	if cfg.Role == "coordinator" || cfg.Role == "all" {
+		schedEnqueuer := newSchedulerEnqueuer(jobManager, metaStore)
+		sched := scheduler.New(metaStore, schedEnqueuer)
+		schedCtx, schedCancel := context.WithCancel(context.Background())
+		defer schedCancel()
+		go sched.Run(schedCtx, 30*time.Second)
+	}
 
 	// Conversion engine
 	workers := 4
@@ -364,7 +442,8 @@ func main() {
 		r.Delete("/datasets/{dataset}/tables/{table}", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
 			for _, p := range session.Projects {
-				tableHandler.DropForProject(w, r, p.ProjectID)
+				deleter := &credsDeleter{accessKey: p.AccessKey, secretKey: p.SecretKey, endpoint: session.GatewayEndpoint}
+				tableHandler.DropWithDeps(w, r, p.ProjectID, deleter, metaStore, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
 				return
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
@@ -383,6 +462,32 @@ func main() {
 			session := auth.GetSession(r)
 			for _, p := range session.Projects {
 				jobHandler.SubmitWithCreds(w, r, p.ProjectID, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+
+		// Schedule routes
+		r.Post("/schedules", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				scheduleHandler.CreateForProject(w, r, p.ProjectID, session.Email)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+		r.Get("/schedules", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				scheduleHandler.ListForProject(w, r, p.ProjectID)
+				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+		r.Delete("/schedules/{id}", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			for _, p := range session.Projects {
+				scheduleHandler.DeleteForProject(w, r, p.ProjectID)
 				return
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)

@@ -517,6 +517,14 @@ func (s *SQLiteStore) ListSchedules(ctx context.Context, projectID string) ([]*S
 	return out, rows.Err()
 }
 
+// SetScheduleNextRun updates only the next_run_at column. Not part of Store
+// interface — used by the scheduler enqueuer to persist advanced next-run after
+// a scheduled job completes.
+func (s *SQLiteStore) SetScheduleNextRun(ctx context.Context, id string, next time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE schedules SET next_run_at = ? WHERE id = ?`, fmtTime(next), id)
+	return err
+}
+
 func (s *SQLiteStore) DeleteSchedule(ctx context.Context, id string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM schedules WHERE id = ?`, id)
 	if err != nil {
