@@ -183,8 +183,7 @@ func (s *Service) SaveTablePartitions(ctx context.Context, t *metastore.Table) e
 	if err := s.store.DeleteTable(ctx, t.ProjectID, t.Dataset, t.Name); err != nil {
 		return err
 	}
-	// Preserve the data version across the rewrite.
-	t.CreatedAt = t.CreatedAt // no-op; CreateTable refreshes UpdatedAt
+	// CreateTable refreshes UpdatedAt; CreatedAt is preserved from the original.
 	return s.store.CreateTable(ctx, t)
 }
 
