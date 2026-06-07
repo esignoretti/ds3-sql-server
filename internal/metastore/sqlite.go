@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -68,6 +69,16 @@ func (s *SQLiteStore) migrate() error {
 			finished_at     TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_jobs_project_created ON jobs(project_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS cache_index (
+			key            TEXT PRIMARY KEY,
+			project_id     TEXT NOT NULL,
+			sql_norm       TEXT NOT NULL,
+			table_versions TEXT NOT NULL,
+			location       TEXT NOT NULL,
+			size_bytes     INTEGER NOT NULL,
+			created_at     TEXT NOT NULL,
+			last_access_at TEXT NOT NULL
+		)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -329,6 +340,102 @@ func (s *SQLiteStore) ListJobs(ctx context.Context, projectID string, limit int)
 		out = append(out, j)
 	}
 	return out, rows.Err()
+}
+
+// ── CacheIndex helpers ──────────────────────────────────────────
+
+func (s *SQLiteStore) PutCacheEntry(ctx context.Context, e *CacheEntry) error {
+	if e.CreatedAt.IsZero() {
+		e.CreatedAt = time.Now().UTC()
+	}
+	if e.LastAccessAt.IsZero() {
+		e.LastAccessAt = e.CreatedAt
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO cache_index (key, project_id, sql_norm, table_versions, location, size_bytes, created_at, last_access_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(key) DO UPDATE SET
+		   project_id=excluded.project_id, sql_norm=excluded.sql_norm,
+		   table_versions=excluded.table_versions, location=excluded.location,
+		   size_bytes=excluded.size_bytes, last_access_at=excluded.last_access_at`,
+		e.Key, e.ProjectID, e.SQLNorm, e.TableVersions, e.Location, e.SizeBytes,
+		fmtTime(e.CreatedAt), fmtTime(e.LastAccessAt))
+	if err != nil {
+		return fmt.Errorf("put cache entry: %w", err)
+	}
+	return nil
+}
+
+func scanCacheEntry(row interface{ Scan(...any) error }) (*CacheEntry, error) {
+	var e CacheEntry
+	var created, accessed string
+	err := row.Scan(&e.Key, &e.ProjectID, &e.SQLNorm, &e.TableVersions, &e.Location, &e.SizeBytes, &created, &accessed)
+	if err != nil {
+		return nil, err
+	}
+	e.CreatedAt = parseTime(created)
+	e.LastAccessAt = parseTime(accessed)
+	return &e, nil
+}
+
+const cacheCols = `key, project_id, sql_norm, table_versions, location, size_bytes, created_at, last_access_at`
+
+func (s *SQLiteStore) LookupCacheEntry(ctx context.Context, key string) (*CacheEntry, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+cacheCols+` FROM cache_index WHERE key = ?`, key)
+	e, err := scanCacheEntry(row)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup cache entry: %w", err)
+	}
+	return e, nil
+}
+
+func (s *SQLiteStore) DeleteCacheEntry(ctx context.Context, key string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM cache_index WHERE key = ?`, key); err != nil {
+		return fmt.Errorf("delete cache entry: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ListCacheEntries(ctx context.Context) ([]*CacheEntry, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+cacheCols+` FROM cache_index ORDER BY last_access_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list cache entries: %w", err)
+	}
+	defer rows.Close()
+	out := []*CacheEntry{}
+	for rows.Next() {
+		e, err := scanCacheEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// DeleteCacheEntriesForTable removes every cache entry whose TableVersions JSON
+// references the given fully-qualified table. The match is a substring probe on
+// the JSON key `"projectID/dataset/table":` — adequate because keys are exact
+// fully-qualified names with no embedded quotes (validated identifiers).
+func (s *SQLiteStore) DeleteCacheEntriesForTable(ctx context.Context, projectID, dataset, table string) error {
+	needle := `"` + projectID + "/" + dataset + "/" + table + `":`
+	// LIKE with an escaped pattern; '%' and '_' cannot appear in validated FQNs,
+	// but escape defensively.
+	pattern := "%" + likeEscape(needle) + "%"
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM cache_index WHERE table_versions LIKE ? ESCAPE '\'`, pattern)
+	if err != nil {
+		return fmt.Errorf("delete cache entries for table: %w", err)
+	}
+	return nil
+}
+
+func likeEscape(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
 }
 
 var _ Store = (*SQLiteStore)(nil)
