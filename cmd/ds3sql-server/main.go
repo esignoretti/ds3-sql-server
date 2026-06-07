@@ -147,6 +147,13 @@ func main() {
 		cfg.ListenAddr = host + ":" + strconv.Itoa(*port)
 	}
 
+	// Worker/coordinator security: shared secret is required.
+	if cfg.Role == "coordinator" || cfg.Role == "worker" {
+		if cfg.Cluster.SharedSecret == "" {
+			log.Fatalf("cluster.shared_secret (DS3SQL_CLUSTER_SHARED_SECRET) is required for role=%q", cfg.Role)
+		}
+	}
+
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)

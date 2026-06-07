@@ -69,7 +69,13 @@ func NewEngine(maxRows, maxExecutionSecs int, maxResultBytes int64, poolSize, th
 	}, nil
 }
 
-func applyS3Creds(db *sql.DB, accessKey, secretKey, rawEndpoint string) {
+// escapeSQL quotes a string literal by doubling single quotes, preventing
+// SQL injection via DuckDB string literals.
+func escapeSQL(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
+func applyS3Creds(db *sql.DB, accessKey, secretKey, rawEndpoint string) error {
 	useSSL := true
 	endpoint := rawEndpoint
 	if idx := strings.Index(endpoint, "://"); idx >= 0 {
@@ -80,17 +86,28 @@ func applyS3Creds(db *sql.DB, accessKey, secretKey, rawEndpoint string) {
 	if useSSL {
 		useSSLStr = "true"
 	}
-	db.Exec("CREATE OR REPLACE SECRET ds3_s3 (TYPE S3, KEY_ID '" + accessKey + "', SECRET '" + secretKey + "', ENDPOINT '" + endpoint + "', REGION 'us-east-1', USE_SSL " + useSSLStr + ", URL_STYLE 'path')")
-	db.Exec("SET s3_access_key_id='" + accessKey + "'")
-	db.Exec("SET s3_secret_access_key='" + secretKey + "'")
-	db.Exec("SET s3_endpoint='" + endpoint + "'")
-	db.Exec("SET s3_region='us-east-1'")
-	db.Exec("SET s3_url_style='path'")
-	if useSSL {
-		db.Exec("SET s3_use_ssl=true")
-	} else {
-		db.Exec("SET s3_use_ssl=false")
+	ak := escapeSQL(accessKey)
+	sk := escapeSQL(secretKey)
+	ep := escapeSQL(endpoint)
+	queries := []string{
+		"CREATE OR REPLACE SECRET ds3_s3 (TYPE S3, KEY_ID '" + ak + "', SECRET '" + sk + "', ENDPOINT '" + ep + "', REGION 'us-east-1', USE_SSL " + useSSLStr + ", URL_STYLE 'path')",
+		"SET s3_access_key_id='" + ak + "'",
+		"SET s3_secret_access_key='" + sk + "'",
+		"SET s3_endpoint='" + ep + "'",
+		"SET s3_region='us-east-1'",
+		"SET s3_url_style='path'",
 	}
+	if useSSL {
+		queries = append(queries, "SET s3_use_ssl=true")
+	} else {
+		queries = append(queries, "SET s3_use_ssl=false")
+	}
+	for _, q := range queries {
+		if _, err := db.Exec(q); err != nil {
+			return fmt.Errorf("apply s3 creds: %w", err)
+		}
+	}
+	return nil
 }
 
 func (e *Engine) Query(sqlStr string, accessKey, secretKey, rawEndpoint string) *Result {
@@ -99,7 +116,9 @@ func (e *Engine) Query(sqlStr string, accessKey, secretKey, rawEndpoint string) 
 	db := <-e.pool
 	defer func() { e.pool <- db }()
 
-	applyS3Creds(db, accessKey, secretKey, rawEndpoint)
+	if err := applyS3Creds(db, accessKey, secretKey, rawEndpoint); err != nil {
+		return errorResult(err.Error(), start)
+	}
 
 	// Set memory limit
 	memSQL := "SET memory_limit='" + e.memoryLimit + "'"
@@ -136,7 +155,9 @@ func (e *Engine) ExecWrite(sqlStr string, bindings []ViewBinding, accessKey, sec
 	db := <-e.pool
 	defer func() { e.pool <- db }()
 
-	applyS3Creds(db, accessKey, secretKey, rawEndpoint)
+	if err := applyS3Creds(db, accessKey, secretKey, rawEndpoint); err != nil {
+		return err
+	}
 
 	schemas := map[string]struct{}{}
 	for _, b := range bindings {
@@ -179,7 +200,9 @@ func (e *Engine) QueryView(sqlStr string, bindings []ViewBinding, accessKey, sec
 	db := <-e.pool
 	defer func() { e.pool <- db }()
 
-	applyS3Creds(db, accessKey, secretKey, rawEndpoint)
+	if err := applyS3Creds(db, accessKey, secretKey, rawEndpoint); err != nil {
+		return errorResult(err.Error(), start)
+	}
 
 	schemas := map[string]struct{}{}
 	for _, b := range bindings {

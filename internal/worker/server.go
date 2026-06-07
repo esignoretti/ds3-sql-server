@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 
@@ -43,10 +44,20 @@ func NewServer(engine *query.Engine, secret string, data *cache.DataCache) *Serv
 	return &Server{engine: engine, secret: secret, data: data}
 }
 
+// checkSecret validates the shared secret using a constant-time comparison.
+// An empty server secret is always rejected.
+func (s *Server) checkSecret(r *http.Request) bool {
+	if s.secret == "" {
+		return false
+	}
+	got := r.Header.Get(SecretHeader)
+	return subtle.ConstantTimeCompare([]byte(s.secret), []byte(got)) == 1
+}
+
 // Execute handles POST /internal/execute. It validates the shared secret,
 // optionally localizes HDD objects via the data cache, then runs QueryView.
 func (s *Server) Execute(w http.ResponseWriter, r *http.Request) {
-	if s.secret == "" || r.Header.Get(SecretHeader) != s.secret {
+	if !s.checkSecret(r) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
