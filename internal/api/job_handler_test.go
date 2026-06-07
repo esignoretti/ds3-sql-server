@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/esignoretti/ds3-sql-server/internal/job"
 	"github.com/esignoretti/ds3-sql-server/internal/query"
@@ -19,6 +20,18 @@ func (stubExecutor) Execute(ctx context.Context, req job.ExecRequest) *query.Res
 		Columns:  []query.ColumnInfo{{Name: "n", Type: "INTEGER"}},
 		Rows:     [][]any{{int64(1)}},
 		RowCount: 1,
+	}
+}
+
+// slowExecutor blocks for `delay` before returning, to exercise the 202 path.
+type slowExecutor struct{ delay time.Duration }
+
+func (s slowExecutor) Execute(ctx context.Context, req job.ExecRequest) *query.Result {
+	select {
+	case <-time.After(s.delay):
+		return &query.Result{RowCount: 1}
+	case <-ctx.Done():
+		return &query.Result{Error: "cancelled"}
 	}
 }
 
@@ -55,5 +68,84 @@ func TestJobHandler_SubmitSyncAndGet(t *testing.T) {
 	h.SubmitWithCreds(w, req, "p1", "ak", "sk", "http://localhost:9000")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing sql, got %d", w.Code)
+	}
+}
+
+func TestJobHandler_WaitFastPathReturnsInline(t *testing.T) {
+	mgr := job.NewManager(slowExecutor{delay: 1 * time.Millisecond})
+	h := NewJobHandler(mgr)
+
+	req := httptest.NewRequest("POST", "/jobs?wait=2s", strings.NewReader(`{"sql":"SELECT 1"}`))
+	w := httptest.NewRecorder()
+	h.SubmitWithCreds(w, req, "p1", "ak", "sk", "http://localhost:9000")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 inline, got %d body=%s", w.Code, w.Body.String())
+	}
+	var j job.Job
+	if err := json.Unmarshal(w.Body.Bytes(), &j); err != nil {
+		t.Fatal(err)
+	}
+	if j.Status != "done" {
+		t.Fatalf("expected done within wait, got %q", j.Status)
+	}
+}
+
+func TestJobHandler_WaitTimeoutReturns202(t *testing.T) {
+	mgr := job.NewManager(slowExecutor{delay: 500 * time.Millisecond})
+	h := NewJobHandler(mgr)
+
+	req := httptest.NewRequest("POST", "/jobs?wait=10ms", strings.NewReader(`{"sql":"SELECT 1"}`))
+	w := httptest.NewRecorder()
+	h.SubmitWithCreds(w, req, "p1", "ak", "sk", "http://localhost:9000")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 on wait timeout, got %d", w.Code)
+	}
+	var j job.Job
+	if err := json.Unmarshal(w.Body.Bytes(), &j); err != nil {
+		t.Fatal(err)
+	}
+	if j.ID == "" {
+		t.Fatal("expected a job id for polling")
+	}
+	if j.Status == "done" {
+		t.Fatal("job should not be done yet")
+	}
+}
+
+func TestJobHandler_ListAndCancel(t *testing.T) {
+	mgr := job.NewManager(slowExecutor{delay: 200 * time.Millisecond})
+	h := NewJobHandler(mgr)
+
+	// Submit one async job.
+	req := httptest.NewRequest("POST", "/jobs?wait=1ms", strings.NewReader(`{"sql":"SELECT 1"}`))
+	w := httptest.NewRecorder()
+	h.SubmitWithCreds(w, req, "p1", "ak", "sk", "http://localhost:9000")
+	var submitted job.Job
+	_ = json.Unmarshal(w.Body.Bytes(), &submitted)
+
+	// List.
+	lreq := httptest.NewRequest("GET", "/jobs", nil)
+	lw := httptest.NewRecorder()
+	h.ListForProject(lw, lreq, "p1")
+	if lw.Code != http.StatusOK || !strings.Contains(lw.Body.String(), submitted.ID) {
+		t.Fatalf("list missing job: %d %s", lw.Code, lw.Body.String())
+	}
+
+	// Cancel.
+	creq := httptest.NewRequest("DELETE", "/jobs/"+submitted.ID, nil)
+	creq = withURLParam(creq, "id", submitted.ID)
+	cw := httptest.NewRecorder()
+	h.Cancel(cw, creq)
+	if cw.Code != http.StatusOK && cw.Code != http.StatusAccepted {
+		t.Fatalf("cancel status = %d", cw.Code)
+	}
+
+	// Cancel unknown -> 404.
+	creq2 := httptest.NewRequest("DELETE", "/jobs/nope", nil)
+	creq2 = withURLParam(creq2, "id", "nope")
+	cw2 := httptest.NewRecorder()
+	h.Cancel(cw2, creq2)
+	if cw2.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 cancelling unknown job, got %d", cw2.Code)
 	}
 }
