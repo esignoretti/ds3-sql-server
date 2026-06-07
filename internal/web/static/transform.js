@@ -44,16 +44,17 @@ function tfLoadBucket(bucket) {
     });
 }
 
-function tfToggleFile(path, el) {
+function tfToggleFile(path, spanEl) {
+  var row = spanEl.parentElement;
   var idx = tabState.browse.selectedFiles.indexOf(path);
   if (idx >= 0) {
     tabState.browse.selectedFiles.splice(idx, 1);
-    el.classList.remove('tf-selected');
-    el.innerHTML = '☐ ' + el.innerHTML.slice(el.innerHTML.indexOf('☑') >= 0 ? 2 : 0).trim();
+    row.classList.remove('tf-selected');
+    spanEl.textContent = '☐ ' + spanEl.textContent.slice(2);
   } else {
     tabState.browse.selectedFiles.push(path);
-    el.classList.add('tf-selected');
-    el.innerHTML = '☑ ' + el.innerHTML.slice(el.innerHTML.indexOf('☐') >= 0 ? 2 : 0).trim();
+    row.classList.add('tf-selected');
+    spanEl.textContent = '☑ ' + spanEl.textContent.slice(2);
   }
   renderTransformTab();
   updateTabBadges();
