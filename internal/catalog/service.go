@@ -174,3 +174,139 @@ func referencesTable(sql, dataset, name string) bool {
 	}
 	return false
 }
+
+// PrefixDeleter deletes all objects under an s3 prefix (s3.Client satisfies it).
+type PrefixDeleter interface {
+	DeletePrefix(ctx context.Context, bucket, prefix string) error
+}
+
+// CacheInvalidator removes result-cache entries referencing a table.
+type CacheInvalidator interface {
+	DeleteCacheEntriesForTable(ctx context.Context, projectID, dataset, table string) error
+}
+
+// RegisterManagedInput registers (or replaces) a managed table after its data
+// has been written. ProbeReader is the DuckDB reader expression for the just-
+// written location, used to infer schema + row count.
+type RegisterManagedInput struct {
+	ProjectID        string
+	Dataset          string
+	Name             string
+	Location         string // s3:// base prefix of the managed files
+	ProbeReader      string // e.g. read_parquet('s3://.../*.parquet') or **/*.parquet
+	StorageClass     string
+	PartitionColumns []string
+}
+
+// RegisterManaged upserts a managed table, inferring schema + stats from the
+// written data via ProbeReader. If a table with the same name exists it is
+// replaced (drop registration, recreate) so CTAS/load are idempotent.
+func (s *Service) RegisterManaged(ctx context.Context, in RegisterManagedInput, accessKey, secretKey, endpoint string) (*metastore.Table, error) {
+	if err := validIdent("table", in.Name); err != nil {
+		return nil, err
+	}
+	if _, err := s.store.GetDataset(ctx, in.ProjectID, in.Dataset); err != nil {
+		return nil, fmt.Errorf("dataset %q: %w", in.Dataset, err)
+	}
+
+	// Infer schema from the written data using DESCRIBE + the probe reader.
+	// ProbeReader is a full DuckDB reader expression (e.g. read_parquet('...')), so we
+	// use QueryView with DESCRIBE rather than InferSchema (which wraps paths in readers).
+	// DESCRIBE returns rows with columns (column_name, column_type, null, key, default, extra).
+	descRes := s.engine.QueryView("DESCRIBE SELECT * FROM "+in.ProbeReader, nil, accessKey, secretKey, endpoint)
+	if descRes.Error != "" {
+		return nil, fmt.Errorf("infer managed schema: %s", descRes.Error)
+	}
+	cols := make([]metastore.Column, 0, len(descRes.Rows))
+	for _, row := range descRes.Rows {
+		if len(row) < 2 {
+			continue
+		}
+		name := fmt.Sprintf("%v", row[0])
+		typ := fmt.Sprintf("%v", row[1])
+		nullable := true
+		if len(row) >= 3 {
+			nullable = fmt.Sprintf("%v", row[2]) == "YES"
+		}
+		cols = append(cols, metastore.Column{Name: name, Type: typ, Nullable: nullable})
+	}
+
+	var rowCount int64
+	countRes := s.engine.QueryView("SELECT count(*) AS c FROM "+in.ProbeReader, nil, accessKey, secretKey, endpoint)
+	if countRes.Error == "" && countRes.RowCount == 1 {
+		switch v := countRes.Rows[0][0].(type) {
+		case int64:
+			rowCount = v
+		case int32:
+			rowCount = int64(v)
+		case int:
+			rowCount = int64(v)
+		}
+	}
+
+	storageClass := in.StorageClass
+	if storageClass == "" {
+		storageClass = "ssd"
+	}
+
+	// Replace any existing registration (idempotent CTAS/load).
+	_ = s.store.DeleteTable(ctx, in.ProjectID, in.Dataset, in.Name)
+
+	t := &metastore.Table{
+		ProjectID:        in.ProjectID,
+		Dataset:          in.Dataset,
+		Name:             in.Name,
+		Kind:             "managed",
+		Location:         in.Location,
+		Format:           "parquet",
+		StorageClass:     storageClass,
+		PartitionColumns: in.PartitionColumns,
+		Schema:           cols,
+		Stats:            metastore.Stats{RowCount: rowCount},
+	}
+	if err := s.store.CreateTable(ctx, t); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// DropTableWithData drops a table registration. For managed tables it also
+// deletes the underlying data objects via the deleter, parsing the bucket +
+// prefix from the table's s3:// Location. The cache invalidator is always
+// called so dependent cached results are evicted.
+func (s *Service) DropTableWithData(ctx context.Context, projectID, dataset, name string, deleter PrefixDeleter, cache CacheInvalidator, accessKey, secretKey, endpoint string) error {
+	tbl, err := s.store.GetTable(ctx, projectID, dataset, name)
+	if err != nil {
+		return err
+	}
+	if tbl.Kind == "managed" && deleter != nil {
+		bucket, prefix, ok := splitS3(tbl.Location)
+		if ok {
+			if err := deleter.DeletePrefix(ctx, bucket, prefix); err != nil {
+				return fmt.Errorf("delete managed data: %w", err)
+			}
+		}
+	}
+	if err := s.store.DeleteTable(ctx, projectID, dataset, name); err != nil {
+		return err
+	}
+	if cache != nil {
+		_ = cache.DeleteCacheEntriesForTable(ctx, projectID, dataset, name)
+	}
+	return nil
+}
+
+// splitS3 splits an "s3://bucket/key/prefix" into (bucket, "key/prefix"). The
+// returned ok is false for non-s3 locations (e.g. external local globs).
+func splitS3(location string) (bucket, prefix string, ok bool) {
+	const scheme = "s3://"
+	if !strings.HasPrefix(location, scheme) {
+		return "", "", false
+	}
+	rest := location[len(scheme):]
+	idx := strings.IndexByte(rest, '/')
+	if idx < 0 {
+		return rest, "", true
+	}
+	return rest[:idx], rest[idx+1:], true
+}
