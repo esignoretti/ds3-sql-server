@@ -5,6 +5,12 @@ function switchCatalogProject(id) {
   // keep the buckets tab's project selector in sync if present
   var bsel = document.getElementById('project-select');
   if (bsel) bsel.value = id;
+  // If the buckets tab content is still showing the placeholder,
+  // also sync its project and load buckets
+  var content = document.getElementById('browser-content');
+  if (content && content.textContent.indexOf('Select a project first') >= 0 && typeof showBuckets === 'function') {
+    showBuckets();
+  }
   loadCatalogTree();
 }
 
@@ -29,7 +35,10 @@ function loadCatalogTree() {
       datasets.forEach(function(ds) {
         var dsId = 'ds-' + escAttr(ds.name);
         html += '<li class="catalog-ds">' +
-          '<div class="catalog-ds-name" onclick="toggleDataset(\'' + escJs(ds.name) + '\')">▸ ' + escHtml(ds.name) + '</div>' +
+          '<div class="catalog-ds-name">' +
+          '<span onclick="toggleDataset(\'' + escJs(ds.name) + '\')">▸ ' + escHtml(ds.name) + '</span>' +
+          '<button class="btn btn-secondary" style="font-size:0.65rem;padding:0.1rem 0.4rem;margin-left:0.5rem;" onclick="event.stopPropagation();promptRegisterTable(\'' + escJs(ds.name) + '\')">+ Table</button>' +
+          '</div>' +
           '<ul class="catalog-tables" id="' + dsId + '" style="display:none;"></ul></li>';
       });
       html += '</ul>';
@@ -47,6 +56,33 @@ function toggleDataset(ds) {
   } else {
     ul.style.display = 'none';
   }
+}
+
+function promptRegisterTable(dataset) {
+  if (!tabState.browse.project) { alert('Select a project first'); return; }
+  // Build the register URL with the current project
+  var baseUrl = '/datasets/' + encodeURIComponent(dataset) + '/tables?project=' + encodeURIComponent(tabState.browse.project);
+  var name = prompt('Table name (letters, digits, underscore):');
+  if (!name) return;
+  var location = prompt('S3 path or glob, e.g. s3://my-bucket/path/*.parquet:');
+  if (!location) return;
+  var format = prompt('Format (parquet, csv, json, tsv):', 'parquet');
+  if (!format) return;
+  fetch(baseUrl, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: name, location: location, format: format})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) { alert(d.error); return; }
+    // Reload tables for this dataset — ensure visible
+    var ul = document.getElementById('ds-' + dataset);
+    if (ul) {
+      ul.dataset.loaded = '';
+      ul.style.display = 'block';
+      loadTablesForDataset(dataset, ul);
+    }
+  });
 }
 
 function loadTablesForDataset(ds, ul) {

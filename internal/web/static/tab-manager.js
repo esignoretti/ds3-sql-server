@@ -25,6 +25,20 @@ function switchTab(tabName) {
   updateTabBadges();
 
   if (tabName === 'catalog' && typeof loadCatalogTree === 'function') loadCatalogTree();
+  if (tabName === 'buckets' && tabState.browse.project) {
+    var sel = document.getElementById('project-select');
+    if (sel) {
+      if (sel.value !== tabState.browse.project) {
+        sel.value = tabState.browse.project;
+      }
+      // Load buckets if the panel still shows the placeholder message.
+      var content = document.getElementById('browser-content');
+      var crumb = document.getElementById('breadcrumb');
+      if (content && content.textContent.indexOf('Select a project first') >= 0 && typeof showBuckets === 'function') {
+        showBuckets();
+      }
+    }
+  }
   if (tabName === 'analyze') renderAnalyzeTab();
   if (tabName === 'report') renderReportTab();
   if (tabName === 'transform') renderTransformTab();
@@ -168,6 +182,15 @@ document.addEventListener('DOMContentLoaded', function() {
     switchTab(tab);
   } else {
     switchTab('catalog');
+  }
+});
+
+// When switching to buckets, sync the project selector and auto-load buckets.
+document.addEventListener('DOMContentLoaded', function() {
+  // If a project was previously selected (from catalog tab), sync buckets selector.
+  var sel = document.getElementById('project-select');
+  if (sel && tabState.browse.project && sel.value !== tabState.browse.project) {
+    sel.value = tabState.browse.project;
   }
 });
 

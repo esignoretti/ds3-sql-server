@@ -3,6 +3,9 @@
 function switchProject(id) {
   if (!id) return;
   tabState.browse.project = id;
+  // sync with catalog tab's project selector
+  var csel = document.getElementById('catalog-project-select');
+  if (csel) csel.value = id;
   tabState.browse.bucket = '';
   tabState.browse.selectedFiles = [];
   resetDownstreamTabs('browse');
