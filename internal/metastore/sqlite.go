@@ -63,9 +63,34 @@ func (s *SQLiteStore) migrate() error {
 
 func (s *SQLiteStore) Close() error { return s.db.Close() }
 
-func (s *SQLiteStore) CreateDataset(ctx context.Context, ds *Dataset) error { panic("unimplemented") }
+func (s *SQLiteStore) CreateDataset(ctx context.Context, ds *Dataset) error {
+	if ds.CreatedAt.IsZero() {
+		ds.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO datasets (project_id, name, created_at) VALUES (?, ?, ?)`,
+		ds.ProjectID, ds.Name, ds.CreatedAt.Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("create dataset: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) GetDataset(ctx context.Context, projectID, name string) (*Dataset, error) {
-	panic("unimplemented")
+	row := s.db.QueryRowContext(ctx,
+		`SELECT project_id, name, created_at FROM datasets WHERE project_id = ? AND name = ?`,
+		projectID, name)
+	var d Dataset
+	var created string
+	switch err := row.Scan(&d.ProjectID, &d.Name, &created); err {
+	case nil:
+		d.CreatedAt, _ = time.Parse(time.RFC3339, created)
+		return &d, nil
+	case sql.ErrNoRows:
+		return nil, ErrNotFound
+	default:
+		return nil, fmt.Errorf("get dataset: %w", err)
+	}
 }
 func (s *SQLiteStore) ListDatasets(ctx context.Context, projectID string) ([]*Dataset, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT project_id, name, created_at FROM datasets WHERE project_id = ? ORDER BY name`, projectID)
