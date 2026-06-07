@@ -432,6 +432,17 @@ func main() {
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
+		r.Delete("/datasets/{dataset}", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
+			for _, p := range session.Projects {
+				if projectID == "" || p.ProjectID == projectID {
+					datasetHandler.DeleteForProject(w, r, p.ProjectID)
+					return
+				}
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
 		r.Get("/datasets", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
 			projectID := r.URL.Query().Get("project")

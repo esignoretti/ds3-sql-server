@@ -93,6 +93,7 @@ type Store interface {
 	CreateDataset(ctx context.Context, ds *Dataset) error
 	GetDataset(ctx context.Context, projectID, name string) (*Dataset, error)
 	ListDatasets(ctx context.Context, projectID string) ([]*Dataset, error)
+	DeleteDataset(ctx context.Context, projectID, name string) error
 
 	CreateTable(ctx context.Context, t *Table) error
 	GetTable(ctx context.Context, projectID, dataset, name string) (*Table, error)

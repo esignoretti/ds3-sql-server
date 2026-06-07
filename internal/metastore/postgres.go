@@ -161,6 +161,19 @@ func (s *PostgresStore) GetDataset(ctx context.Context, projectID, name string) 
 	}
 }
 
+func (s *PostgresStore) DeleteDataset(ctx context.Context, projectID, name string) error {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM datasets WHERE project_id = $1 AND name = $2`,
+		projectID, name)
+	if err != nil {
+		return fmt.Errorf("delete dataset: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *PostgresStore) ListDatasets(ctx context.Context, projectID string) ([]*Dataset, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT project_id, name, created_at FROM datasets WHERE project_id = $1 ORDER BY name`, projectID)

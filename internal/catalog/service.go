@@ -42,6 +42,20 @@ func (s *Service) CreateDataset(ctx context.Context, projectID, name string) err
 	return s.store.CreateDataset(ctx, &metastore.Dataset{ProjectID: projectID, Name: name})
 }
 
+func (s *Service) DeleteDataset(ctx context.Context, projectID, name string) error {
+	// Delete all tables first, then the dataset itself.
+	tables, err := s.store.ListTables(ctx, projectID, name)
+	if err != nil {
+		return err
+	}
+	for _, t := range tables {
+		if err := s.store.DeleteTable(ctx, projectID, name, t.Name); err != nil {
+			return err
+		}
+	}
+	return s.store.DeleteDataset(ctx, projectID, name)
+}
+
 func (s *Service) ListDatasets(ctx context.Context, projectID string) ([]*metastore.Dataset, error) {
 	return s.store.ListDatasets(ctx, projectID)
 }

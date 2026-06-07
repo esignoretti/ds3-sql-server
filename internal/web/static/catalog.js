@@ -28,7 +28,10 @@ function loadCatalogTree() {
         html += '<li class="catalog-ds">' +
           '<div class="catalog-ds-name">' +
           '<span onclick="toggleDataset(\'' + escJs(ds.name) + '\')">▸ ' + escHtml(ds.name) + '</span>' +
-          '<button class="btn btn-secondary" style="font-size:0.65rem;padding:0.1rem 0.4rem;margin-left:0.5rem;" onclick="event.stopPropagation();promptRegisterTable(\'' + escJs(ds.name) + '\')">+ Table</button>' +
+          '<span style="display:inline-flex;gap:0.25rem;margin-left:0.5rem;">' +
+          '<button class="btn btn-secondary" style="font-size:0.65rem;padding:0.1rem 0.4rem;" onclick="event.stopPropagation();promptRegisterTable(\'' + escJs(ds.name) + '\')">+ Table</button>' +
+          '<button class="btn btn-secondary" style="font-size:0.65rem;padding:0.1rem 0.4rem;color:var(--red);" onclick="event.stopPropagation();deleteDataset(\'' + escJs(ds.name) + '\')">✕</button>' +
+          '</span>' +
           '</div>' +
           '<ul class="catalog-tables" id="' + dsId + '" style="display:none;"></ul></li>';
       });
@@ -272,10 +275,11 @@ function loadTablesForDataset(ds, ul) {
       if (!tables.length) { ul.innerHTML = '<li class="catalog-table-empty">no tables</li>'; return; }
       var html = '';
       tables.forEach(function(t) {
-        html += '<li class="catalog-table" data-dataset="' + escAttr(ds) + '" data-table="' + escAttr(t.name) + '" ' +
-          'onclick="selectCatalogTable(\'' + escJs(ds) + '\',\'' + escJs(t.name) + '\')">' +
+        html += '<li class="catalog-table" data-dataset="' + escAttr(ds) + '" data-table="' + escAttr(t.name) + '">' +
+          '<span onclick="selectCatalogTable(\'' + escJs(ds) + '\',\'' + escJs(t.name) + '\')" style="cursor:pointer;flex:1;">' +
           '<span class="catalog-table-name">' + escHtml(t.name) + '</span> ' +
-          '<span class="catalog-table-meta">' + escHtml(t.format || '') + ' · ' + ((t.stats && t.stats.row_count) || 0) + ' rows</span></li>';
+          '<span class="catalog-table-meta">' + escHtml(t.format || '') + ' · ' + ((t.stats && t.stats.row_count) || 0) + ' rows</span></span>' +
+          '<button class="btn btn-secondary" style="font-size:0.6rem;padding:0.05rem 0.3rem;color:var(--red);flex-shrink:0;" onclick="event.stopPropagation();deleteTable(\'' + escJs(ds) + '\',\'' + escJs(t.name) + '\',false)">✕</button></li>';
       });
       ul.innerHTML = html;
       ul.dataset.loaded = '1';
@@ -362,6 +366,44 @@ function submitNewDataset() {
     loadCatalogTree();
   })
   .catch(function(e) { errEl.textContent = e.message; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Create'; });
+}
+
+function deleteDataset(name) {
+  if (!confirm('Delete dataset "' + name + '" and all its tables?')) return;
+  // Tables need to be deleted first (the API doesn't cascade).
+  var ul = document.getElementById('ds-' + name);
+  if (ul) {
+    var tables = ul.querySelectorAll('.catalog-table');
+    tables.forEach(function(el) {
+      var tableName = el.getAttribute('data-table');
+      if (tableName) deleteTable(name, tableName, true);
+    });
+  }
+  // Delete the dataset itself.
+  fetch('/datasets/' + encodeURIComponent(name) + '?project=' + encodeURIComponent(tabState.browse.project), {
+    method: 'DELETE'
+  })
+  .then(function(r) {
+    if (!r.ok) return r.text().then(function(t) { var m = t; try { var j = JSON.parse(t); if (j.error) m = j.error; } catch(e) {} throw new Error(m); });
+    showToast('Dataset "' + name + '" deleted');
+    loadCatalogTree();
+  })
+  .catch(function(e) { alert('Error deleting dataset: ' + e.message); });
+}
+
+function deleteTable(dataset, table, silent) {
+  fetch('/datasets/' + encodeURIComponent(dataset) + '/tables/' + encodeURIComponent(table) + '?project=' + encodeURIComponent(tabState.browse.project), {
+    method: 'DELETE'
+  })
+  .then(function(r) {
+    if (!r.ok) return r.text().then(function(t) { var m = t; try { var j = JSON.parse(t); if (j.error) m = j.error; } catch(e) {} throw new Error(m); });
+    if (!silent) {
+      showToast('Table "' + table + '" deleted');
+      var ul = document.getElementById('ds-' + dataset);
+      if (ul) { ul.dataset.loaded = ''; ul.style.display = 'block'; loadTablesForDataset(dataset, ul); }
+    }
+  })
+  .catch(function(e) { if (!silent) alert('Error: ' + e.message); });
 }
 
 function fmtSize(b) {

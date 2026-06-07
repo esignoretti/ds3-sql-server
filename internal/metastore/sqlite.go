@@ -149,6 +149,19 @@ func (s *SQLiteStore) ListDatasets(ctx context.Context, projectID string) ([]*Da
 	}
 	return out, rows.Err()
 }
+func (s *SQLiteStore) DeleteDataset(ctx context.Context, projectID, name string) error {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM datasets WHERE project_id = ? AND name = ?`,
+		projectID, name)
+	if err != nil {
+		return fmt.Errorf("delete dataset: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *SQLiteStore) CreateTable(ctx context.Context, t *Table) error {
 	now := time.Now().UTC()
 	if t.CreatedAt.IsZero() {
