@@ -15,6 +15,21 @@ type Column struct {
 // Stats holds lightweight table statistics.
 type Stats struct {
 	RowCount int64 `json:"row_count"`
+	// Partitions is the per-partition file/location list used for pruning. It is
+	// optional and omitted from JSON when empty, so pre-Phase-4 stats payloads
+	// (which have no "partitions" key) round-trip unchanged.
+	Partitions []Partition `json:"partitions,omitempty"`
+}
+
+// Partition describes one Hive-style partition of a table: the partition-column
+// values that select it, the reader location for its files, a row-count estimate,
+// and optional per-column min/max bounds for range pruning.
+type Partition struct {
+	Values   map[string]string `json:"values"`
+	Location string            `json:"location"`
+	RowCount int64             `json:"row_count"`
+	Min      map[string]string `json:"min,omitempty"`
+	Max      map[string]string `json:"max,omitempty"`
 }
 
 // Dataset is a namespace owned by a Cubbit project.
