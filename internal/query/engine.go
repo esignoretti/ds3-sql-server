@@ -129,6 +129,48 @@ func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
+// ExecWrite registers each binding as a DuckDB view, applies S3 credentials, then
+// executes a statement that produces no result rows (e.g. COPY ... TO). It is the
+// write-path counterpart to QueryView. Created schemas are dropped afterward.
+func (e *Engine) ExecWrite(sqlStr string, bindings []ViewBinding, accessKey, secretKey, rawEndpoint string) error {
+	db := <-e.pool
+	defer func() { e.pool <- db }()
+
+	applyS3Creds(db, accessKey, secretKey, rawEndpoint)
+
+	schemas := map[string]struct{}{}
+	for _, b := range bindings {
+		schemas[b.Schema] = struct{}{}
+	}
+	for s := range schemas {
+		if _, err := db.Exec("CREATE SCHEMA IF NOT EXISTS " + quoteIdent(s)); err != nil {
+			return fmt.Errorf("create schema %s: %w", s, err)
+		}
+	}
+	defer func() {
+		for s := range schemas {
+			db.Exec("DROP SCHEMA IF EXISTS " + quoteIdent(s) + " CASCADE")
+		}
+	}()
+	for _, b := range bindings {
+		stmt := "CREATE OR REPLACE VIEW " + quoteIdent(b.Schema) + "." + quoteIdent(b.Name) +
+			" AS SELECT * FROM " + b.ReaderSQL
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("register table %s.%s: %w", b.Schema, b.Name, err)
+		}
+	}
+
+	if e.threads > 0 {
+		db.Exec(fmt.Sprintf("SET threads=%d", e.threads))
+	}
+	db.Exec("SET memory_limit='" + e.memoryLimit + "'")
+
+	if _, err := db.Exec(sqlStr); err != nil {
+		return fmt.Errorf("exec write: %w", err)
+	}
+	return nil
+}
+
 // QueryView registers each binding as a DuckDB view, executes the user SQL, then
 // drops the created schemas. Results are collected exactly like Query.
 func (e *Engine) QueryView(sqlStr string, bindings []ViewBinding, accessKey, secretKey, rawEndpoint string) *Result {
