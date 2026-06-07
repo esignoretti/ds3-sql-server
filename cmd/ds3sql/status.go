@@ -73,3 +73,18 @@ func authedPost(cfg *CLIConfig, path string, body []byte) ([]byte, error) {
 	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
 }
+
+func authedDelete(cfg *CLIConfig, path string) error {
+	req, _ := http.NewRequest("DELETE", serverURL(cfg)+path, nil)
+	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
