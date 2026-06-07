@@ -14,12 +14,23 @@ import (
 // credentials. Type selects the execution path ("query" default; "ctas"/"load"
 // added in Phase 3).
 type ExecRequest struct {
-	Type      string
+	Type      string       // "query" (default), "ctas", or "load"
 	SQL       string
 	ProjectID string
 	AccessKey string
 	SecretKey string
 	Endpoint  string
+	Load      *LoadRequest // set when Type == "load"
+}
+
+// LoadRequest mirrors write.LoadRequest at the job boundary so the job package
+// does not import write (write imports job-free). main.go adapts between them.
+type LoadRequest struct {
+	Source      string   `json:"source"`
+	Into        string   `json:"into"`
+	Format      string   `json:"format"`
+	PartitionBy []string `json:"partition_by"`
+	Mode        string   `json:"mode"`
 }
 
 // Executor runs a query and returns its result. LocalExecutor runs in-process;
@@ -38,6 +49,7 @@ type Job struct {
 	Result    *query.Result `json:"result,omitempty"`
 	Error     string        `json:"error,omitempty"`
 	CreatedAt time.Time     `json:"created_at"`
+	IntoTable string        `json:"into_table,omitempty"`
 }
 
 type Manager struct {
@@ -47,6 +59,7 @@ type Manager struct {
 	cancels map[string]context.CancelFunc
 	sink    JobSink
 	admit   *admission
+	write   WriteExecutor
 }
 
 func NewManager(exec Executor) *Manager {
@@ -141,22 +154,68 @@ func (m *Manager) Submit(parent context.Context, req ExecRequest) *Job {
 		}
 		m.save(ctx, m.updateStatus(j, "running"))
 
-		res := m.exec.Execute(ctx, req)
-
-		m.mu.Lock()
-		switch {
-		case ctx.Err() != nil:
-			j.Status = "cancelled"
-		case res.Error != "":
-			j.Status = "failed"
-			j.Error = res.Error
+		switch typ {
+		case "ctas":
+			m.mu.RLock()
+			we := m.write
+			m.mu.RUnlock()
+			if we == nil {
+				m.mu.Lock()
+				j.Status, j.Error = "failed", "write executor not configured"
+				m.jobs[j.ID] = j
+				m.mu.Unlock()
+				m.save(ctx, j)
+				return
+			}
+			into, err := we.RunCTAS(ctx, req.ProjectID, req.SQL, req.AccessKey, req.SecretKey, req.Endpoint)
+			m.mu.Lock()
+			if err != nil {
+				j.Status, j.Error = "failed", err.Error()
+			} else {
+				j.Status, j.IntoTable = "done", into
+			}
+			m.jobs[j.ID] = j
+			m.mu.Unlock()
+			m.save(ctx, j)
+		case "load":
+			m.mu.RLock()
+			we := m.write
+			m.mu.RUnlock()
+			if we == nil || req.Load == nil {
+				m.mu.Lock()
+				j.Status, j.Error = "failed", "load request or write executor missing"
+				m.jobs[j.ID] = j
+				m.mu.Unlock()
+				m.save(ctx, j)
+				return
+			}
+			into, err := we.RunLoad(ctx, req.ProjectID, *req.Load, req.AccessKey, req.SecretKey, req.Endpoint)
+			m.mu.Lock()
+			if err != nil {
+				j.Status, j.Error = "failed", err.Error()
+			} else {
+				j.Status, j.IntoTable = "done", into
+			}
+			m.jobs[j.ID] = j
+			m.mu.Unlock()
+			m.save(ctx, j)
 		default:
-			j.Status = "done"
-			j.Result = res
+			res := m.exec.Execute(ctx, req)
+			m.mu.Lock()
+			switch {
+			case ctx.Err() != nil:
+				j.Status = "cancelled"
+			case res.Error != "":
+				j.Status = "failed"
+				j.Error = res.Error
+			default:
+				j.Status = "done"
+				j.Result = res
+			}
+			m.jobs[j.ID] = j
+			m.mu.Unlock()
+			m.save(ctx, j)
 		}
-		m.jobs[j.ID] = j
-		m.mu.Unlock()
-		m.save(ctx, j)
 	}()
 	return &cp
 }
@@ -328,6 +387,19 @@ type ExecutorFunc func(ctx context.Context, req ExecRequest) *query.Result
 func (f ExecutorFunc) Execute(ctx context.Context, req ExecRequest) *query.Result { return f(ctx, req) }
 
 var _ Executor = (ExecutorFunc)(nil)
+
+// WriteExecutor runs write jobs (CTAS/load) and returns the affected table ref.
+type WriteExecutor interface {
+	RunCTAS(ctx context.Context, projectID, sql, ak, sk, ep string) (string, error)
+	RunLoad(ctx context.Context, projectID string, req LoadRequest, ak, sk, ep string) (string, error)
+}
+
+// SetWriteExecutor attaches the write executor used for ctas/load jobs.
+func (m *Manager) SetWriteExecutor(we WriteExecutor) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.write = we
+}
 
 func (a *admission) cancelWaiter(project string, ch chan struct{}) {
 	a.mu.Lock()
