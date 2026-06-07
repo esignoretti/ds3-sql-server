@@ -61,3 +61,35 @@ func TestLoad_StorageEnvOverride(t *testing.T) {
 		t.Fatalf("hdd env override not applied: %+v", hdd)
 	}
 }
+
+func TestDefault_Phase2Sections(t *testing.T) {
+	c := Default()
+	if c.Query.MaxConcurrentPerProject <= 0 {
+		t.Fatal("expected a positive default max_concurrent_per_project")
+	}
+	if c.Cache.ResultTTL <= 0 {
+		t.Fatal("expected a default result cache TTL")
+	}
+	if c.Cache.ResultDir == "" || c.Cache.DataDir == "" {
+		t.Fatal("expected default cache dirs")
+	}
+}
+
+func TestLoad_ClusterEnvOverrides(t *testing.T) {
+	t.Setenv("DS3SQL_CLUSTER_WORKERS", "http://w1:8080,http://w2:8080")
+	t.Setenv("DS3SQL_CLUSTER_SHARED_SECRET", "sekret")
+	t.Setenv("DS3SQL_MAX_CONCURRENT_PER_PROJECT", "5")
+	c, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(c.Cluster.Workers) != 2 || c.Cluster.Workers[0] != "http://w1:8080" {
+		t.Fatalf("workers env override not applied: %+v", c.Cluster.Workers)
+	}
+	if c.Cluster.SharedSecret != "sekret" {
+		t.Fatalf("shared secret env override not applied: %q", c.Cluster.SharedSecret)
+	}
+	if c.Query.MaxConcurrentPerProject != 5 {
+		t.Fatalf("max_concurrent env override not applied: %d", c.Query.MaxConcurrentPerProject)
+	}
+}

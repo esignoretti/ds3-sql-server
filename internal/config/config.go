@@ -3,7 +3,9 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -12,6 +14,21 @@ import (
 // MetastoreConfig holds settings for the embedded SQLite metastore.
 type MetastoreConfig struct {
 	Path string `yaml:"path"`
+}
+
+// ClusterConfig configures the static worker pool and coordinator↔worker auth.
+type ClusterConfig struct {
+	Workers      []string `yaml:"workers"`       // worker base URLs, e.g. http://w1:8080
+	SharedSecret string   `yaml:"shared_secret"` // guards /internal/execute
+}
+
+// CacheConfig configures the result cache and the worker local-SSD data cache.
+type CacheConfig struct {
+	ResultDir      string        `yaml:"result_dir"`       // payload dir (or SSD-bucket mount)
+	ResultTTL      time.Duration `yaml:"result_ttl"`
+	ResultMaxBytes int64         `yaml:"result_max_bytes"`
+	DataDir        string        `yaml:"data_dir"`         // worker SSD cache dir
+	DataMaxBytes   int64         `yaml:"data_max_bytes"`
 }
 
 // StorageClassConfig maps a logical storage class to a real DS3 bucket + endpoint.
@@ -38,6 +55,9 @@ type Config struct {
 
 	Metastore MetastoreConfig `yaml:"metastore"`
 
+	Cluster ClusterConfig `yaml:"cluster"`
+	Cache   CacheConfig   `yaml:"cache"`
+
 	Storage StorageConfig `yaml:"storage"`
 }
 
@@ -47,12 +67,13 @@ type AuthConfig struct {
 }
 
 type QueryConfig struct {
-	MaxRows          int    `yaml:"max_rows"`
-	MaxExecutionSecs int    `yaml:"max_execution_seconds"`
-	MaxResultBytes   int64  `yaml:"max_result_bytes"`
-	PoolSize         int    `yaml:"pool_size"`
-	Threads          int    `yaml:"threads"`
-	MemoryLimit      string `yaml:"memory_limit"`
+	MaxRows                  int    `yaml:"max_rows"`
+	MaxExecutionSecs         int    `yaml:"max_execution_seconds"`
+	MaxResultBytes           int64  `yaml:"max_result_bytes"`
+	PoolSize                 int    `yaml:"pool_size"`
+	Threads                  int    `yaml:"threads"`
+	MemoryLimit              string `yaml:"memory_limit"`
+	MaxConcurrentPerProject  int    `yaml:"max_concurrent_per_project"`
 }
 
 type RateLimitConfig struct {
@@ -70,18 +91,30 @@ func Default() *Config {
 			RefreshTokenExpiry: 720 * time.Hour,
 		},
 		Query: QueryConfig{
-			MaxRows:          10000,
-			MaxExecutionSecs: 60,
-			MaxResultBytes:   104857600,
-			PoolSize:         4,
-			Threads:          0,
-			MemoryLimit:      "2GB",
+			MaxRows:                  10000,
+			MaxExecutionSecs:         60,
+			MaxResultBytes:           104857600,
+			PoolSize:                 4,
+			Threads:                  0,
+			MemoryLimit:              "2GB",
+			MaxConcurrentPerProject:  4,
 		},
 		RateLimit: RateLimitConfig{
 			QueriesPerMinute: 10,
 		},
 		Metastore: MetastoreConfig{
 			Path: defaultMetastorePath(),
+		},
+		Cluster: ClusterConfig{
+			Workers:      nil,
+			SharedSecret: "",
+		},
+		Cache: CacheConfig{
+			ResultDir:      defaultCacheDir("results"),
+			ResultTTL:      1 * time.Hour,
+			ResultMaxBytes: 10 << 30, // 10 GiB
+			DataDir:        defaultCacheDir("data"),
+			DataMaxBytes:   50 << 30, // 50 GiB
 		},
 		Storage: StorageConfig{
 			Classes: map[string]StorageClassConfig{
@@ -98,6 +131,14 @@ func defaultMetastorePath() string {
 		return "metastore.db"
 	}
 	return home + "/.ds3sql/metastore.db"
+}
+
+func defaultCacheDir(sub string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join("cache", sub)
+	}
+	return filepath.Join(home, ".ds3sql", "cache", sub)
 }
 
 // ResolveStorageClass returns the configured bucket/endpoint for a logical class
@@ -164,6 +205,49 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("DS3SQL_METASTORE_PATH"); v != "" {
 		cfg.Metastore.Path = v
+	}
+
+	// Cluster env overrides
+	if v := os.Getenv("DS3SQL_CLUSTER_WORKERS"); v != "" {
+		parts := strings.Split(v, ",")
+		workers := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				workers = append(workers, p)
+			}
+		}
+		cfg.Cluster.Workers = workers
+	}
+	if v := os.Getenv("DS3SQL_CLUSTER_SHARED_SECRET"); v != "" {
+		cfg.Cluster.SharedSecret = v
+	}
+	if v := os.Getenv("DS3SQL_MAX_CONCURRENT_PER_PROJECT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Query.MaxConcurrentPerProject = n
+		}
+	}
+
+	// Cache env overrides
+	if v := os.Getenv("DS3SQL_CACHE_RESULT_DIR"); v != "" {
+		cfg.Cache.ResultDir = v
+	}
+	if v := os.Getenv("DS3SQL_CACHE_RESULT_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Cache.ResultTTL = d
+		}
+	}
+	if v := os.Getenv("DS3SQL_CACHE_RESULT_MAX_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			cfg.Cache.ResultMaxBytes = n
+		}
+	}
+	if v := os.Getenv("DS3SQL_CACHE_DATA_DIR"); v != "" {
+		cfg.Cache.DataDir = v
+	}
+	if v := os.Getenv("DS3SQL_CACHE_DATA_MAX_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			cfg.Cache.DataMaxBytes = n
+		}
 	}
 
 	// Storage env overrides
