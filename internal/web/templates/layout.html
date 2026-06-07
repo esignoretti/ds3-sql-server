@@ -24,9 +24,7 @@
                 <div class="tab" data-tab="catalog" onclick="navigateToTab('catalog')">
                     Catalog <span class="tab-badge"></span>
                 </div>
-                <div class="tab" data-tab="buckets" onclick="navigateToTab('buckets')">
-                    Buckets <span class="tab-badge"></span>
-                </div>
+
                 <div class="tab" data-tab="transform" onclick="navigateToTab('transform')">
                     Transform <span class="tab-badge"></span>
                 </div>
@@ -49,7 +47,6 @@
 
             {{if eq .Page "app"}}
             <div class="tab-content active" id="tab-catalog">{{template "tab_catalog" .}}</div>
-            <div class="tab-content" id="tab-buckets">{{template "tab_buckets" .}}</div>
             <div class="tab-content" id="tab-transform">{{template "tab_transform" .}}</div>
             <div class="tab-content" id="tab-query">{{template "tab_query" .}}</div>
             <div class="tab-content" id="tab-analyze">{{template "tab_analyze" .}}</div>

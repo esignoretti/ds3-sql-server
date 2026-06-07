@@ -2,15 +2,6 @@
 // seeds the query editor when a table is clicked.
 function switchCatalogProject(id) {
   tabState.browse.project = id;
-  // keep the buckets tab's project selector in sync if present
-  var bsel = document.getElementById('project-select');
-  if (bsel) bsel.value = id;
-  // If the buckets tab content is still showing the placeholder,
-  // also sync its project and load buckets
-  var content = document.getElementById('browser-content');
-  if (content && content.textContent.indexOf('Select a project first') >= 0 && typeof showBuckets === 'function') {
-    showBuckets();
-  }
   loadCatalogTree();
 }
 
@@ -56,6 +47,98 @@ function toggleDataset(ds) {
   } else {
     ul.style.display = 'none';
   }
+  // Show bucket browser in the detail panel for importing.
+  showCatalogDatasetDetail(ds);
+}
+
+function showCatalogDatasetDetail(ds) {
+  var title = document.getElementById('catalog-detail-title');
+  if (title) title.textContent = ds + ' — Browse & Import';
+  var c = document.getElementById('catalog-detail-content');
+  if (!c) return;
+  c.innerHTML =
+    '<div style="margin-bottom:0.75rem;">' +
+      '<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">' +
+        '<span style="font-weight:600;font-size:0.9rem;">Browse buckets</span>' +
+        '<select id="cat-browse-bucket" class="input" style="flex:1;min-width:200px;" onchange="catBrowseBucket(this.value)"><option value="">Select bucket…</option></select>' +
+      '</div>' +
+      '<div id="cat-browse-files" style="margin-top:0.5rem;font-size:0.85rem;color:var(--text-muted);">Select a bucket to browse files you can register as tables.</div>' +
+    '</div>' +
+    '<div id="cat-region-info" style="font-size:0.82rem;color:var(--text-muted);border-top:0.0625rem solid var(--border);padding-top:0.75rem;">' +
+      'Click <strong>+ Table</strong> next to the dataset name to register a path manually.' +
+    '</div>';
+
+  // Load bucket list
+  if (tabState.browse.project) {
+    fetch('/buckets?project=' + encodeURIComponent(tabState.browse.project))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) return;
+        var sel = document.getElementById('cat-browse-bucket');
+        if (!sel) return;
+        var html = '<option value="">Select bucket…</option>';
+        (d.buckets || []).forEach(function(b) {
+          html += '<option value="' + escAttr(b.name) + '">' + escHtml(b.name) + '</option>';
+        });
+        sel.innerHTML = html;
+      });
+  }
+}
+
+function catBrowseBucket(bucket) {
+  var filesEl = document.getElementById('cat-browse-files');
+  if (!filesEl || !bucket) { return; }
+  filesEl.innerHTML = '<span style="color:var(--text-muted);">Loading…</span>';
+  fetch('/buckets/' + encodeURIComponent(bucket) + '?project=' + encodeURIComponent(tabState.browse.project) + '&prefix=')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { filesEl.innerHTML = '<span style="color:var(--red);">' + escHtml(d.error) + '</span>'; return; }
+      var files = (d.objects || []).filter(function(o) {
+        var l = o.key.toLowerCase();
+        return l.endsWith('.parquet') || l.endsWith('.csv') || l.endsWith('.json') || l.endsWith('.jsonl') || l.endsWith('.tsv');
+      });
+      if (!files.length) {
+        filesEl.innerHTML = '<span style="color:var(--text-muted);">No queryable files in this bucket.</span>';
+        return;
+      }
+      var html = '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.35rem;">' + files.length + ' file(s) — click to register:</div>';
+      files.forEach(function(o) {
+        var path = 's3://' + bucket + '/' + o.key;
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:0.3rem 0.25rem;border-bottom:0.0625rem solid var(--border);font-size:0.85rem;">' +
+          '<span>' + escHtml(o.key.split('/').pop()) + ' <span style="color:var(--text-muted);font-size:0.75rem;">(' + fmtSize(o.size) + ')</span></span>' +
+          '<button class="btn btn-secondary" style="font-size:0.7rem;padding:0.1rem 0.5rem;" onclick="catalogRegisterFromBrowse(\'' + escJs(bucket) + '\',\'' + escJs(o.key) + '\')">+ Table</button>' +
+          '</div>';
+      });
+      filesEl.innerHTML = html;
+    })
+    .catch(function(e) { filesEl.innerHTML = '<span style="color:var(--red);">Error: ' + escHtml(e.message) + '</span>'; });
+}
+
+function catalogRegisterFromBrowse(bucket, key) {
+  var ds = document.getElementById('catalog-detail-title');
+  var dataset = ds ? ds.textContent.replace(' — Browse & Import', '') : '';
+  if (!dataset) { alert('Select a dataset first'); return; }
+  var path = 's3://' + bucket + '/' + key;
+  var name = key.split('/').pop().replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
+  showModal(
+    '<h3 style="margin:0 0 1rem 0;font-size:1rem;">Register Table in ' + escHtml(dataset) + '</h3>' +
+    '<div style="display:flex;flex-direction:column;gap:0.75rem;">' +
+    '<label><span style="font-size:0.85rem;color:var(--text-muted);">Table name</span><input id="reg-name" class="input" value="' + escAttr(name) + '" style="width:100%;margin-top:0.25rem;"></label>' +
+    '<label><span style="font-size:0.85rem;color:var(--text-muted);">Path</span><input id="reg-location" class="input" value="' + escAttr(path) + '" style="width:100%;margin-top:0.25rem;"></label>' +
+    '<div><span style="font-size:0.85rem;color:var(--text-muted);">Format</span>' +
+    '<div style="display:flex;gap:1rem;margin-top:0.35rem;flex-wrap:wrap;">' +
+    '<label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;cursor:pointer;"><input type="radio" name="reg-format" value="auto" checked> Auto</label>' +
+    '<label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;cursor:pointer;"><input type="radio" name="reg-format" value="parquet"> Parquet</label>' +
+    '<label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;cursor:pointer;"><input type="radio" name="reg-format" value="csv"> CSV</label>' +
+    '<label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;cursor:pointer;"><input type="radio" name="reg-format" value="json"> JSON</label>' +
+    '</div></div>' +
+    '<div id="reg-error" style="color:var(--red);font-size:0.85rem;display:none;"></div>' +
+    '<div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.25rem;">' +
+    '<button class="btn btn-secondary" onclick="this.closest(\'#catalog-modal\').remove()">Cancel</button>' +
+    '<button class="btn" onclick="submitRegisterTable(\'' + escJs(dataset) + '\')">Register</button>' +
+    '</div></div>'
+  );
+  document.getElementById('reg-name').focus();
 }
 
 function showModal(html) {
@@ -242,4 +325,10 @@ function submitNewDataset() {
     loadCatalogTree();
   })
   .catch(function(e) { errEl.textContent = e.message; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Create'; });
+}
+
+function fmtSize(b) {
+  if (!b) return '0B';
+  var u = ['B','KB','MB','GB','TB'], i = Math.floor(Math.log(b) / Math.log(1024));
+  return (b / Math.pow(1024, i)).toFixed(1) + ' ' + u[i];
 }

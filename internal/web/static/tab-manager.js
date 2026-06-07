@@ -25,20 +25,6 @@ function switchTab(tabName) {
   updateTabBadges();
 
   if (tabName === 'catalog' && typeof loadCatalogTree === 'function') loadCatalogTree();
-  if (tabName === 'buckets' && tabState.browse.project) {
-    var sel = document.getElementById('project-select');
-    if (sel) {
-      if (sel.value !== tabState.browse.project) {
-        sel.value = tabState.browse.project;
-      }
-      // Load buckets if the panel still shows the placeholder message.
-      var content = document.getElementById('browser-content');
-      var crumb = document.getElementById('breadcrumb');
-      if (content && content.textContent.indexOf('Select a project first') >= 0 && typeof showBuckets === 'function') {
-        showBuckets();
-      }
-    }
-  }
   if (tabName === 'analyze') renderAnalyzeTab();
   if (tabName === 'report') renderReportTab();
   if (tabName === 'transform') renderTransformTab();
@@ -171,14 +157,14 @@ function resetDownstreamTabs(from) {
 
 window.addEventListener('hashchange', function() {
   var tab = window.location.hash.replace('#', '') || 'catalog';
-  if (['catalog','buckets','transform','query','analyze','report'].indexOf(tab) >= 0) {
+  if (['catalog','transform','query','analyze','report'].indexOf(tab) >= 0) {
     switchTab(tab);
   }
 });
 
 document.addEventListener('DOMContentLoaded', function() {
   var tab = window.location.hash.replace('#', '') || 'catalog';
-  if (['catalog','buckets','transform','query','analyze','report'].indexOf(tab) >= 0) {
+  if (['catalog','transform','query','analyze','report'].indexOf(tab) >= 0) {
     switchTab(tab);
   } else {
     switchTab('catalog');
