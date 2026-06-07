@@ -175,7 +175,7 @@ function catalogRegisterFromBrowse(bucket, key) {
     '<div id="reg-error" style="color:var(--red);font-size:0.85rem;display:none;"></div>' +
     '<div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.25rem;">' +
     '<button class="btn btn-secondary" onclick="this.closest(\'#catalog-modal\').remove()">Cancel</button>' +
-    '<button class="btn" onclick="submitRegisterTable(\'' + escJs(dataset) + '\')">Register</button>' +
+    '<button class="btn" id="reg-submit" onclick="submitRegisterTable(\'' + escJs(dataset) + '\')">Register</button>' +
     '</div></div>'
   );
   document.getElementById('reg-name').focus();
