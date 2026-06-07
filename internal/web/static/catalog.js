@@ -276,10 +276,13 @@ function loadTablesForDataset(ds, ul) {
       if (!tables.length) { ul.innerHTML = '<li class="catalog-table-empty">no tables</li>'; return; }
       var html = '';
       tables.forEach(function(t) {
+        var isGlob = (t.location || '').indexOf('*') >= 0;
+        var rowLabel = ((t.stats && t.stats.row_count) || 0) + ' rows';
+        if (isGlob) rowLabel += ' (live count varies)';
         html += '<li class="catalog-table" data-dataset="' + escAttr(ds) + '" data-table="' + escAttr(t.name) + '">' +
           '<span onclick="selectCatalogTable(\'' + escJs(ds) + '\',\'' + escJs(t.name) + '\')" style="cursor:pointer;flex:1;">' +
           '<span class="catalog-table-name">' + escHtml(t.name) + '</span> ' +
-          '<span class="catalog-table-meta">' + escHtml(t.format || '') + ' · ' + ((t.stats && t.stats.row_count) || 0) + ' rows</span></span>' +
+          '<span class="catalog-table-meta">' + escHtml(t.format || '') + ' · ' + rowLabel + '</span></span>' +
           '<button class="btn btn-secondary" style="font-size:0.6rem;padding:0.05rem 0.3rem;color:var(--red);flex-shrink:0;" onclick="event.stopPropagation();deleteTable(\'' + escJs(ds) + '\',\'' + escJs(t.name) + '\',false)">✕</button></li>';
       });
       ul.innerHTML = html;
@@ -309,15 +312,41 @@ function renderTableDetail(t) {
   if (title) title.textContent = t.dataset + '.' + t.name;
   var c = document.getElementById('catalog-detail-content');
   if (!c) return;
+  var isGlob = (t.location || '').indexOf('*') >= 0;
   var html = '<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;">' +
-    escHtml(t.format || '') + ' · ' + escHtml(t.storage_class || '') + ' · ' + ((t.stats && t.stats.row_count) || 0) + ' rows</div>';
+    escHtml(t.format || '') + ' · ' + escHtml(t.storage_class || '') + ' · ' +
+    ((t.stats && t.stats.row_count) || 0) + ' rows' +
+    (isGlob ? ' <span style="color:var(--text-muted);font-size:0.75rem;">(snapshot — new files auto-included)</span>' : '') +
+    '</div>';
   html += '<table class="catalog-schema"><thead><tr><th>Column</th><th>Type</th></tr></thead><tbody>';
   (t.schema || []).forEach(function(col) {
     html += '<tr><td>' + escHtml(col.name) + '</td><td>' + escHtml(col.type) + '</td></tr>';
   });
   html += '</tbody></table>';
-  html += '<button class="btn" style="margin-top:0.75rem;" onclick="seedQueryEditor(\'' + escJs(t.dataset) + '\',\'' + escJs(t.name) + '\');navigateToTab(\'query\');">▶ Query this table</button>';
+  html += '<div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">' +
+    '<button class="btn" onclick="seedQueryEditor(\'' + escJs(t.dataset) + '\',\'' + escJs(t.name) + '\');navigateToTab(\'query\');">▶ Query this table</button>' +
+    '<button class="btn btn-secondary" onclick="runLiveCount(\'' + escJs(t.dataset) + '\',\'' + escJs(t.name) + '\',this)">⟳ Refresh row count</button>' +
+    '</div>';
   c.innerHTML = html;
+}
+
+function runLiveCount(dataset, table, btn) {
+  var original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Counting…';
+  fetch('/query?project=' + encodeURIComponent(tabState.browse.project), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: 'SELECT COUNT(*) AS c FROM ' + dataset + '.' + table})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) { alert(d.error); return; }
+    var count = (d.rows && d.rows[0] && d.rows[0][0]) || 0;
+    btn.textContent = count + ' rows (live)';
+    setTimeout(function() { btn.disabled = false; btn.textContent = original; }, 5000);
+  })
+  .catch(function(e) { btn.textContent = 'Error'; btn.disabled = false; });
 }
 
 function seedQueryEditor(ds, table) {
