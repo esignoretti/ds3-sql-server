@@ -149,13 +149,19 @@ function catalogRegisterFromBrowse(bucket, key) {
   var ds = document.getElementById('catalog-detail-title');
   var dataset = ds ? ds.textContent.replace(' — Browse & Import', '') : '';
   if (!dataset) { alert('Select a dataset first'); return; }
-  var path = 's3://' + bucket + '/' + key;
-  var name = key.split('/').pop().replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
+  // Suggest the parent directory with a glob so new files are automatically included.
+  var parentKey = key.split('/').slice(0, -1).join('/');
+  var globPath = parentKey ? 's3://' + bucket + '/' + parentKey + '/*' : 's3://' + bucket + '/*';
+  var name = parentKey.split('/').pop().replace(/[^a-zA-Z0-9_]/g, '_') || bucket.replace(/[^a-zA-Z0-9_]/g, '_');
   showModal(
     '<h3 style="margin:0 0 1rem 0;font-size:1rem;">Register Table in ' + escHtml(dataset) + '</h3>' +
     '<div style="display:flex;flex-direction:column;gap:0.75rem;">' +
     '<label><span style="font-size:0.85rem;color:var(--text-muted);">Table name</span><input id="reg-name" class="input" value="' + escAttr(name) + '" style="width:100%;margin-top:0.25rem;"></label>' +
-    '<label><span style="font-size:0.85rem;color:var(--text-muted);">Path</span><input id="reg-location" class="input" value="' + escAttr(path) + '" style="width:100%;margin-top:0.25rem;"></label>' +
+    '<label><span style="font-size:0.85rem;color:var(--text-muted);">Path (use <code>*</code> to match multiple files)</span><input id="reg-location" class="input" value="' + escAttr(globPath) + '" style="width:100%;margin-top:0.25rem;"></label>' +
+    '<div style="font-size:0.8rem;color:var(--text-muted);background:var(--surface-2);padding:0.5rem;border-radius:var(--radius);line-height:1.4;">' +
+    '💡 New files with the same schema are automatically included when the path ends with <code>*</code> or <code>**</code>. ' +
+    'The row count shown in the catalog is a snapshot; the real count comes from running <code>SELECT count(*) FROM table</code>.' +
+    '</div>' +
     '<div><span style="font-size:0.85rem;color:var(--text-muted);">Format</span>' +
     '<div style="display:flex;gap:1rem;margin-top:0.35rem;flex-wrap:wrap;">' +
     '<label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;cursor:pointer;"><input type="radio" name="reg-format" value="auto" checked> Auto</label>' +
