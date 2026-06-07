@@ -289,6 +289,7 @@ func main() {
 	tableHandler := api.NewTableHandler(catService)
 	jobHandler := api.NewJobHandler(jobManager)
 	scheduleHandler := api.NewScheduleHandler(metaStore)
+	catalogFragmentHandler := api.NewCatalogFragmentHandler(catService)
 
 	// Worker data-plane server (role=worker): exposes /internal/execute guarded
 	// by the shared secret, fronted by a local-SSD data cache.
@@ -461,6 +462,19 @@ func main() {
 				deleter := &credsDeleter{accessKey: p.AccessKey, secretKey: p.SecretKey, endpoint: session.GatewayEndpoint}
 				tableHandler.DropWithDeps(w, r, p.ProjectID, deleter, metaStore, p.AccessKey, p.SecretKey, session.GatewayEndpoint)
 				return
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+
+		// Catalog tree fragment (server-rendered HTML for the Web UI)
+		r.Get("/ui/catalog", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
+			for _, p := range session.Projects {
+				if projectID == "" || p.ProjectID == projectID {
+					catalogFragmentHandler.TreeForProject(w, r, p.ProjectID)
+					return
+				}
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
