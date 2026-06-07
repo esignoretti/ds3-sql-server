@@ -8,6 +8,7 @@ package planner
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -149,6 +150,29 @@ func ParseWhere(sql string, partCols []string) []Predicate {
 	return preds
 }
 
+// compare returns -1/0/+1 comparing a and b. If both parse as float64,
+// comparison is numeric; otherwise lexicographic.
+func compare(a, b string) int {
+	af, errA := strconv.ParseFloat(a, 64)
+	bf, errB := strconv.ParseFloat(b, 64)
+	if errA == nil && errB == nil {
+		if af < bf {
+			return -1
+		}
+		if af > bf {
+			return 1
+		}
+		return 0
+	}
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
 func matches(p Predicate, partVal string) bool {
 	switch p.Op {
 	case OpEq:
@@ -161,13 +185,13 @@ func matches(p Predicate, partVal string) bool {
 		}
 		return false
 	case OpGt:
-		return partVal > p.Values[0]
+		return compare(partVal, p.Values[0]) > 0
 	case OpGte:
-		return partVal >= p.Values[0]
+		return compare(partVal, p.Values[0]) >= 0
 	case OpLt:
-		return partVal < p.Values[0]
+		return compare(partVal, p.Values[0]) < 0
 	case OpLte:
-		return partVal <= p.Values[0]
+		return compare(partVal, p.Values[0]) <= 0
 	}
 	return true
 }

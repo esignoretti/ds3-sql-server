@@ -99,6 +99,35 @@ func TestPrune_MultiColumnAnd(t *testing.T) {
 	}
 }
 
+func TestPrune_NumericRange(t *testing.T) {
+	ps := []Partition{
+		{Values: map[string]string{"year": "999"}, Location: "s3://b/year=999/"},
+		{Values: map[string]string{"year": "2025"}, Location: "s3://b/year=2025/"},
+	}
+	// year < '2025' should keep year=999 (numeric comparison).
+	got := Prune("SELECT * FROM t WHERE year < '2025'", []string{"year"}, ps)
+	if len(got) != 1 || got[0].Values["year"] != "999" {
+		t.Fatalf("expected year=999 only, got %v", locs(got))
+	}
+	// year > '2025' should keep nothing (neither is > 2025).
+	got = Prune("SELECT * FROM t WHERE year > '2025'", []string{"year"}, ps)
+	if len(got) != 0 {
+		t.Fatalf("expected none, got %v", locs(got))
+	}
+}
+
+func TestPrune_StringRange(t *testing.T) {
+	// String partition columns still use lexicographic.
+	ps := []Partition{
+		{Values: map[string]string{"region": "eu"}, Location: "s3://b/region=eu/"},
+		{Values: map[string]string{"region": "us"}, Location: "s3://b/region=us/"},
+	}
+	got := Prune("SELECT * FROM t WHERE region > 'eu'", []string{"region"}, ps)
+	if len(got) != 1 || got[0].Values["region"] != "us" {
+		t.Fatalf("expected region=us only, got %v", locs(got))
+	}
+}
+
 func TestReaderLocations(t *testing.T) {
 	got := ReaderLocations([]Partition{{Location: "s3://b/p1/"}, {Location: "s3://b/p2/"}}, "parquet")
 	want := "read_parquet(['s3://b/p1/', 's3://b/p2/'])"
