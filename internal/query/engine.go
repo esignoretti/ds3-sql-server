@@ -75,6 +75,33 @@ func escapeSQL(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
 
+// s3PathFromHTTPS rewrites an https S3 virtual-hosted-style URL to s3:// so
+// DuckDB uses the configured S3 credentials.
+func s3PathFromHTTPS(path string) string {
+	if !strings.HasPrefix(path, "https://") {
+		return path
+	}
+	rest := path[len("https://"):]
+	firstSlash := strings.IndexByte(rest, '/')
+	if firstSlash < 0 {
+		return path
+	}
+	host := rest[:firstSlash]
+	key := rest[firstSlash+1:]
+	if key == "" {
+		return path
+	}
+	dot := strings.IndexByte(host, '.')
+	if dot <= 0 {
+		return path
+	}
+	bucket := host[:dot]
+	if bucket == "" {
+		return path
+	}
+	return "s3://" + bucket + "/" + key
+}
+
 func applyS3Creds(db *sql.DB, accessKey, secretKey, rawEndpoint string) error {
 	useSSL := true
 	endpoint := rawEndpoint

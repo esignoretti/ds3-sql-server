@@ -56,9 +56,39 @@ type RegisterTableInput struct {
 	PartitionColumns []string
 }
 
+// s3PathFromHTTPS rewrites an https S3 virtual-hosted-style URL to s3:// so
+// DuckDB uses the configured S3 credentials. Duplicated in query package to
+// avoid an import cycle (catalog imports query, not the reverse).
+func s3PathFromHTTPS(path string) string {
+	if !strings.HasPrefix(path, "https://") {
+		return path
+	}
+	rest := path[len("https://"):]
+	firstSlash := strings.IndexByte(rest, '/')
+	if firstSlash < 0 {
+		return path
+	}
+	host := rest[:firstSlash]
+	key := rest[firstSlash+1:]
+	if key == "" {
+		return path
+	}
+	dot := strings.IndexByte(host, '.')
+	if dot <= 0 {
+		return path
+	}
+	bucket := host[:dot]
+	if bucket == "" {
+		return path
+	}
+	return "s3://" + bucket + "/" + key
+}
+
 // readerSQL builds the DuckDB reader expression for a location + format.
+// HTTPS URLs are converted to s3:// so DuckDB uses the configured S3 credentials.
 func readerSQL(location, format string) string {
-	loc := strings.ReplaceAll(location, "'", "''")
+	loc := s3PathFromHTTPS(location)
+	loc = strings.ReplaceAll(loc, "'", "''")
 	switch strings.ToLower(format) {
 	case "parquet":
 		return fmt.Sprintf("read_parquet('%s')", loc)
@@ -78,6 +108,8 @@ func (s *Service) RegisterTable(ctx context.Context, in RegisterTableInput, acce
 	if _, err := s.store.GetDataset(ctx, in.ProjectID, in.Dataset); err != nil {
 		return nil, fmt.Errorf("dataset %q: %w", in.Dataset, err)
 	}
+	// Normalize https S3 URLs to s3:// so DuckDB uses credentials.
+	in.Location = s3PathFromHTTPS(in.Location)
 	storageClass := in.StorageClass
 	if storageClass == "" {
 		storageClass = "hdd"

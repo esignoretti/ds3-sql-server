@@ -20,6 +20,7 @@ type SchemaResult struct {
 
 func (e *Engine) InferSchema(path, accessKey, secretKey, rawEndpoint string) *SchemaResult {
 	start := time.Now()
+	path = s3PathFromHTTPS(path)
 
 	db := <-e.pool
 	defer func() { e.pool <- db }()
