@@ -48,7 +48,9 @@ func (h *TableHandler) RegisterForProject(w http.ResponseWriter, r *http.Request
 		PartitionColumns: req.PartitionColumns,
 	}, accessKey, secretKey, endpoint)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
