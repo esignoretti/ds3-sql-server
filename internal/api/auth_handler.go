@@ -144,6 +144,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   86400,
 	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    session.RefreshToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   2592000, // 30 days
+	})
 
 	if ct == "application/x-www-form-urlencoded" {
 		http.Redirect(w, r, "/browse", http.StatusFound)
@@ -205,15 +213,26 @@ func (h *AuthHandler) reconcileProjectCredential(userID, userName, projectName s
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	// Try body first (CLI), then refresh_token cookie (Web UI).
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RefreshToken == "" {
+	refreshToken := ""
+	if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.RefreshToken != "" {
+		refreshToken = req.RefreshToken
+	} else {
+		c, err := r.Cookie("refresh_token")
+		if err == nil && c.Value != "" {
+			refreshToken = c.Value
+		}
+	}
+
+	if refreshToken == "" {
 		http.Error(w, `{"error":"refresh_token required"}`, http.StatusBadRequest)
 		return
 	}
 
-	session, err := h.iamClient.Refresh(req.RefreshToken)
+	session, err := h.iamClient.Refresh(refreshToken)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -223,12 +242,36 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	h.store.Set(session.Token, session)
 
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    session.Token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    session.RefreshToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   2592000,
+	})
+
 	json.NewEncoder(w).Encode(map[string]string{"token": session.Token})
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,

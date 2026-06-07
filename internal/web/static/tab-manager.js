@@ -1,4 +1,28 @@
 // Tab Manager for Multi-Tab Workflow UI — DS3 SQL Server
+
+// Global fetch interceptor: on 401, attempt a token refresh and retry once.
+var _authRefreshing = null;
+var _origFetch = window.fetch;
+function _authFetch(url, opts) {
+  opts = opts || {};
+  // Don't intercept auth endpoints to avoid recursion.
+  if (typeof url === 'string' && url.indexOf('/auth/') >= 0) {
+    return _origFetch(url, opts);
+  }
+  return _origFetch(url, opts).then(function(res) {
+    if (res.status !== 401) return res;
+    // Token expired — try refreshing once.
+    if (_authRefreshing) return _authRefreshing.then(function() { return _authFetch(url, opts); });
+    _authRefreshing = _origFetch('/auth/refresh', {method: 'POST', credentials: 'same-origin'}).then(function(r) {
+      _authRefreshing = null;
+      if (!r.ok) { window.location.href = '/login'; return null; }
+      return r;
+    });
+    return _authRefreshing.then(function() { if (document.body) return _authFetch(url, opts); });
+  });
+}
+window.fetch = function(url, opts) { return _authFetch(url, opts); };
+
 var tabState = {
   catalog: { project: null, selectedTable: null },
   browse: { project: null, bucket: null, prefix: '', selectedFiles: [] },
