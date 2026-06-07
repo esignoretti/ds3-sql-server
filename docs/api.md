@@ -421,6 +421,12 @@ List all tables in a dataset.
 
 Describe a table (schema, stats, storage class).
 
+### DELETE /datasets/{dataset}
+
+Delete a dataset and all its tables.
+
+**Response (204):** empty body.
+
 ### DELETE /datasets/{dataset}/tables/{table}
 
 Drop a table registration.
@@ -429,6 +435,45 @@ Drop a table registration.
 - For **external** tables: only the registration is removed; the source data is preserved.
 
 **Response (204):** empty body.
+
+---
+
+### POST /query
+
+Run a SQL query. If the SQL references catalog tables in `dataset.table` form, they are resolved into DuckDB views automatically. Non-catalog queries (raw `read_parquet(...)`) execute directly.
+
+**Request:**
+```json
+{
+  "sql": "SELECT count(*) FROM my_dataset.my_table"
+}
+```
+
+Uses `?project=<id>` query parameter for multi-project support.
+
+**Response (200):**
+```json
+{
+  "columns": [{"name": "count_star()", "type": "BIGINT"}],
+  "rows": [[100000]],
+  "row_count": 1,
+  "elapsed_ms": 45
+}
+```
+
+### POST /datasets
+
+Create a new dataset.
+
+**Request:**
+```json
+{"name": "sales"}
+```
+
+**Response (201):**
+```json
+{"name": "sales"}
+```
 
 ## Health
 

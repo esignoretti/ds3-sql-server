@@ -176,8 +176,19 @@ The Postgres backend is selected at startup by setting `metastore.driver` to `po
 **Supported predicates:**
 - `=`, `IN`, `>`, `>=`, `<`, `<=` comparisons on partition columns
 - Multiple predicates combined with `AND`
+- Numeric comparison for numeric partition values (not just lexicographic)
 
 **Unsupported forms** (fall back to scanning all partitions — correctness-preserving):
 - `OR` / `NOT` at the top level
 - Expressions or function calls on partition columns
 - Non-partition column predicates (pruning is purely partition-column-based)
+
+## Web UI
+
+The Web UI uses Go `html/template` + HTMX + vanilla JS with no build step. Tabs are managed by `tab-manager.js` with hash-based routing.
+
+**Catalog tab** (primary): Datasets → tables tree with an integrated S3 bucket browser. Click a dataset to browse buckets and register files as tables. The register dialog pre-fills a glob path (`s3://bucket/directory/*.ext`) so new files are auto-included at query time. A ⟳ Refresh row count button runs `SELECT COUNT(*)` live against DuckDB. Tables and datasets can be deleted with ✕ buttons.
+
+**Transform tab**: Self-contained bucket browser for convertible files (non-Parquet/CSV/JSON/TSV). Select files, configure column parsing, and convert to Parquet with progress tracking.
+
+**Query tab**: SQL editor with catalog table resolution (`SELECT * FROM dataset.table` works). Results are paginated with page-size control. Export buttons (CSV/JSON) sit in the SQL card next to the Analyze button. A Recent Jobs panel below shows history.

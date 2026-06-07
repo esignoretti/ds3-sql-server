@@ -18,7 +18,12 @@ A lightweight, stateless sidecar service that enables SQL querying of data store
 - **Connection pooling** — warm DuckDB pool eliminates per-query setup overhead (configurable pool size)
 - **Storage-class tiering** — route managed table data to SSD or HDD DS3 buckets
 - **Managed & external tables** — register external S3 locations or let the write path manage your data lifecycle
-- **Catalog browser** — datasets → tables → columns tree in the left nav (JSON API + server-rendered fragment), with raw bucket browsing demoted to a secondary tab
+- **Catalog browser** — datasets → tables → columns tree with integrated bucket file browser; browse S3 files and register tables with one click; live row count via `⟳ Refresh` button
+- **Glob-based table registration** — paths ending with `*` or `**` automatically include new files on every query; no metastore refresh needed
+- **Auto-detect format** — table registration tries `read_parquet` → `read_csv_auto` → `read_json_auto` and stores whichever works; HTTPS S3 URLs are normalized to `s3://` for credential binding
+- **Dataset & table management** — create/delete datasets and tables from the UI with confirmation dialogs
+- **Transform tab** — self-contained bucket browser, file selection, column config, and convert-to-Parquet pipeline
+- **Export CSV/JSON** — download query results from the SQL card
 - **Jobs panel** — query/CTAS/load job history in the query tab; click a job to restore its SQL into the editor
 - **Postgres metastore** — optional `DS3SQL_METASTORE_DRIVER=postgres` backend for high-availability coordinator deployments; shared conformance suite verifies identical behaviour with the default SQLite store
 - **Partition pruning** — `WHERE` filters on partition columns automatically reduce the set of files scanned (`=`, `IN`, `>`, `>=`, `<`, `<=`, combined with `AND`); unsupported forms fall back to a full scan (correctness-preserving)
