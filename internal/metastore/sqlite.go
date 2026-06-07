@@ -79,6 +79,18 @@ func (s *SQLiteStore) migrate() error {
 			created_at     TEXT NOT NULL,
 			last_access_at TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS schedules (
+			id          TEXT PRIMARY KEY,
+			project_id  TEXT NOT NULL,
+			cron        TEXT NOT NULL,
+			sql         TEXT NOT NULL,
+			into_table  TEXT NOT NULL,
+			owner       TEXT NOT NULL,
+			next_run_at TEXT NOT NULL,
+			last_run_at TEXT NOT NULL,
+			running     INTEGER NOT NULL,
+			created_at  TEXT NOT NULL
+		)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -436,6 +448,122 @@ func (s *SQLiteStore) DeleteCacheEntriesForTable(ctx context.Context, projectID,
 func likeEscape(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 	return r.Replace(s)
+}
+
+// ── Schedule helpers ──────────────────────────────────────────────
+
+const scheduleCols = `id, project_id, cron, sql, into_table, owner, next_run_at, last_run_at, running, created_at`
+
+func scanSchedule(row interface{ Scan(...any) error }) (*Schedule, error) {
+	var sch Schedule
+	var next, last, created string
+	var running int
+	if err := row.Scan(&sch.ID, &sch.ProjectID, &sch.Cron, &sch.SQL, &sch.IntoTable,
+		&sch.Owner, &next, &last, &running, &created); err != nil {
+		return nil, err
+	}
+	sch.NextRunAt = parseTime(next)
+	sch.LastRunAt = parseTime(last)
+	sch.CreatedAt = parseTime(created)
+	sch.Running = running != 0
+	return &sch, nil
+}
+
+func (s *SQLiteStore) CreateSchedule(ctx context.Context, sch *Schedule) error {
+	if sch.CreatedAt.IsZero() {
+		sch.CreatedAt = time.Now().UTC()
+	}
+	running := 0
+	if sch.Running {
+		running = 1
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO schedules (`+scheduleCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sch.ID, sch.ProjectID, sch.Cron, sch.SQL, sch.IntoTable, sch.Owner,
+		fmtTime(sch.NextRunAt), fmtTime(sch.LastRunAt), running, fmtTime(sch.CreatedAt))
+	if err != nil {
+		return fmt.Errorf("create schedule: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) GetSchedule(ctx context.Context, id string) (*Schedule, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+scheduleCols+` FROM schedules WHERE id = ?`, id)
+	sch, err := scanSchedule(row)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get schedule: %w", err)
+	}
+	return sch, nil
+}
+
+func (s *SQLiteStore) ListSchedules(ctx context.Context, projectID string) ([]*Schedule, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+scheduleCols+` FROM schedules WHERE project_id = ? ORDER BY id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list schedules: %w", err)
+	}
+	defer rows.Close()
+	out := []*Schedule{}
+	for rows.Next() {
+		sch, err := scanSchedule(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sch)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) DeleteSchedule(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM schedules WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete schedule: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *SQLiteStore) UpdateScheduleRun(ctx context.Context, id string, lastRun time.Time, running bool) error {
+	r := 0
+	if running {
+		r = 1
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE schedules SET last_run_at = ?, running = ? WHERE id = ?`,
+		fmtTime(lastRun), r, id)
+	if err != nil {
+		return fmt.Errorf("update schedule run: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// GetDueSchedules returns schedules whose next_run_at is at or before now and
+// that are not currently running (the misfire/overlap guard).
+func (s *SQLiteStore) GetDueSchedules(ctx context.Context, now time.Time) ([]*Schedule, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+scheduleCols+` FROM schedules WHERE running = 0 AND next_run_at != '' AND next_run_at <= ? ORDER BY next_run_at`,
+		fmtTime(now))
+	if err != nil {
+		return nil, fmt.Errorf("get due schedules: %w", err)
+	}
+	defer rows.Close()
+	out := []*Schedule{}
+	for rows.Next() {
+		sch, err := scanSchedule(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sch)
+	}
+	return out, rows.Err()
 }
 
 var _ Store = (*SQLiteStore)(nil)

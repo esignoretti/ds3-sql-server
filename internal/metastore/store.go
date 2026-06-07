@@ -98,7 +98,30 @@ type Store interface {
 	ListCacheEntries(ctx context.Context) ([]*CacheEntry, error)
 	DeleteCacheEntriesForTable(ctx context.Context, projectID, dataset, table string) error
 
+	// Schedule
+	CreateSchedule(ctx context.Context, sch *Schedule) error
+	ListSchedules(ctx context.Context, projectID string) ([]*Schedule, error)
+	GetSchedule(ctx context.Context, id string) (*Schedule, error)
+	DeleteSchedule(ctx context.Context, id string) error
+	UpdateScheduleRun(ctx context.Context, id string, lastRun time.Time, running bool) error
+	GetDueSchedules(ctx context.Context, now time.Time) ([]*Schedule, error)
+
 	Close() error
+}
+
+// Schedule is a cron-driven query/CTAS/load. NextRunAt drives due selection;
+// Running guards against overlapping runs (misfire policy: skip if still running).
+type Schedule struct {
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	Cron      string    `json:"cron"`
+	SQL       string    `json:"sql"`
+	IntoTable string    `json:"into_table"`
+	Owner     string    `json:"owner"`
+	NextRunAt time.Time `json:"next_run_at"`
+	LastRunAt time.Time `json:"last_run_at"`
+	Running   bool      `json:"running"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // ErrNotFound is returned when a dataset or table does not exist.
