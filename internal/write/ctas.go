@@ -149,5 +149,7 @@ func ctasProbeReader(location string, partitioned bool) string {
 	if partitioned {
 		return fmt.Sprintf("read_parquet('%s/**/*.parquet', hive_partitioning=true)", escapeLiteral(location))
 	}
-	return fmt.Sprintf("read_parquet('%s/*.parquet')", escapeLiteral(location))
+	// Non-partitioned output is a single file without a .parquet extension;
+	// the ** recursive glob picks it up regardless of name.
+	return fmt.Sprintf("read_parquet('%s/**')", escapeLiteral(location))
 }
