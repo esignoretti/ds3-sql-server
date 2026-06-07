@@ -1,5 +1,6 @@
 // Tab Manager for Multi-Tab Workflow UI — DS3 SQL Server
 var tabState = {
+  catalog: { project: null, selectedTable: null },
   browse: { project: null, bucket: null, prefix: '', selectedFiles: [] },
   transform: { configs: {}, activeFile: null, pendingBucket: null, pendingFile: null },
   query: { sql: '', results: null, currentPage: 0, pageSize: 100 },
@@ -23,9 +24,11 @@ function switchTab(tabName) {
   window.location.hash = tabName;
   updateTabBadges();
 
+  if (tabName === 'catalog' && typeof loadCatalogTree === 'function') loadCatalogTree();
   if (tabName === 'analyze') renderAnalyzeTab();
   if (tabName === 'report') renderReportTab();
   if (tabName === 'transform') renderTransformTab();
+  if (tabName === 'query' && typeof loadJobsPanel === 'function') loadJobsPanel();
 }
 
 function renderTransformTab() {
@@ -37,7 +40,7 @@ function renderTransformTab() {
   var convertible = files.filter(function(p) { return !isQueryable(p); });
 
   if (!convertible.length && !tabState.transform.pendingFile) {
-    list.innerHTML = '<p style="color:var(--text-muted);">No convertible files selected. <a href="#" onclick="switchTab(\'browse\');return false;">Go to Browse</a> to select files.</p>';
+    list.innerHTML = '<p style="color:var(--text-muted);">No convertible files selected. <a href="#" onclick="switchTab(\'buckets\');return false;">Go to Buckets</a> to select files.</p>';
     if (configArea) configArea.style.display = 'none';
     return;
   }
@@ -93,7 +96,7 @@ function updateTabBadges() {
   var browse = tabState.browse;
   var hasConvertible = browse.selectedFiles.some(function(f) { return !isQueryable(f); });
 
-  var browseBadge = document.querySelector('.tab[data-tab="browse"] .tab-badge');
+  var browseBadge = document.querySelector('.tab[data-tab="buckets"] .tab-badge');
   if (browseBadge) browseBadge.textContent = browse.selectedFiles.length || '';
 
   var transformBadge = document.querySelector('.tab[data-tab="transform"] .tab-badge');
@@ -153,18 +156,18 @@ function resetDownstreamTabs(from) {
 }
 
 window.addEventListener('hashchange', function() {
-  var tab = window.location.hash.replace('#', '') || 'browse';
-  if (['browse','transform','query','analyze','report'].indexOf(tab) >= 0) {
+  var tab = window.location.hash.replace('#', '') || 'catalog';
+  if (['catalog','buckets','transform','query','analyze','report'].indexOf(tab) >= 0) {
     switchTab(tab);
   }
 });
 
 document.addEventListener('DOMContentLoaded', function() {
-  var tab = window.location.hash.replace('#', '') || 'browse';
-  if (['browse','transform','query','analyze','report'].indexOf(tab) >= 0) {
+  var tab = window.location.hash.replace('#', '') || 'catalog';
+  if (['catalog','buckets','transform','query','analyze','report'].indexOf(tab) >= 0) {
     switchTab(tab);
   } else {
-    switchTab('browse');
+    switchTab('catalog');
   }
 });
 
