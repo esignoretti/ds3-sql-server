@@ -22,8 +22,8 @@ func NewDiskStore(baseDir string) (*DiskStore, error) {
 	return &DiskStore{baseDir: baseDir}, nil
 }
 
-func (s *DiskStore) path(id string) string {
-	return filepath.Join(s.baseDir, id+".json")
+func (s *DiskStore) path(projectID, id string) string {
+	return filepath.Join(s.baseDir, projectID, id+".json")
 }
 
 func (s *DiskStore) validateID(id string) error {
@@ -33,10 +33,12 @@ func (s *DiskStore) validateID(id string) error {
 	return nil
 }
 
-func (s *DiskStore) List() ([]ReportSummary, error) {
-	entries, err := os.ReadDir(s.baseDir)
+func (s *DiskStore) List(projectID string) ([]ReportSummary, error) {
+	dir := filepath.Join(s.baseDir, projectID)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("read report dir: %w", err)
+		// If the project directory doesn't exist yet, return empty list.
+		return []ReportSummary{}, nil
 	}
 	var summaries []ReportSummary
 	for _, e := range entries {
@@ -44,7 +46,7 @@ func (s *DiskStore) List() ([]ReportSummary, error) {
 			continue
 		}
 		id := e.Name()[:len(e.Name())-5]
-		data, err := os.ReadFile(s.path(id))
+		data, err := os.ReadFile(s.path(projectID, id))
 		if err != nil {
 			continue
 		}
@@ -70,21 +72,34 @@ func (s *DiskStore) Save(report *Report) error {
 	if err := s.validateID(report.ID); err != nil {
 		return err
 	}
+	if report.ProjectID == "" {
+		return fmt.Errorf("report missing project_id")
+	}
+	if err := s.validateID(report.ProjectID); err != nil {
+		return err
+	}
+	dir := filepath.Join(s.baseDir, report.ProjectID)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create project report dir: %w", err)
+	}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal report: %w", err)
 	}
-	if err := os.WriteFile(s.path(report.ID), data, 0644); err != nil {
+	if err := os.WriteFile(s.path(report.ProjectID, report.ID), data, 0644); err != nil {
 		return fmt.Errorf("write report: %w", err)
 	}
 	return nil
 }
 
-func (s *DiskStore) Get(id string) (*Report, error) {
+func (s *DiskStore) Get(projectID, id string) (*Report, error) {
+	if err := s.validateID(projectID); err != nil {
+		return nil, err
+	}
 	if err := s.validateID(id); err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(s.path(id))
+	data, err := os.ReadFile(s.path(projectID, id))
 	if err != nil {
 		return nil, fmt.Errorf("read report %s: %w", id, err)
 	}
@@ -95,11 +110,14 @@ func (s *DiskStore) Get(id string) (*Report, error) {
 	return &r, nil
 }
 
-func (s *DiskStore) Delete(id string) error {
+func (s *DiskStore) Delete(projectID, id string) error {
+	if err := s.validateID(projectID); err != nil {
+		return err
+	}
 	if err := s.validateID(id); err != nil {
 		return err
 	}
-	if err := os.Remove(s.path(id)); err != nil {
+	if err := os.Remove(s.path(projectID, id)); err != nil {
 		return fmt.Errorf("delete report %s: %w", id, err)
 	}
 	return nil

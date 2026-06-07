@@ -18,6 +18,20 @@ type Session struct {
 	Projects        []ProjectCred
 }
 
+// HasProject returns true if the session has access to the given projectID.
+// An empty projectID matches any project (returns true if there's at least one).
+func (s *Session) HasProject(projectID string) bool {
+	if projectID == "" {
+		return len(s.Projects) > 0
+	}
+	for _, p := range s.Projects {
+		if p.ProjectID == projectID {
+			return true
+		}
+	}
+	return false
+}
+
 type IAMClient struct {
 	httpClient *httpClient
 }

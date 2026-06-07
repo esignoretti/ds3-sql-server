@@ -20,11 +20,14 @@ func TestDiskStoreCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	projectID := uuid.New().String()
+
 	r := &Report{
 		ID:        uuid.New().String(),
 		CreatedAt: time.Now(),
 		Title:     "Test Report",
 		SQL:       "SELECT * FROM test",
+		ProjectID: projectID,
 		QueryRows: [][]any{{"hello"}, {"world"}},
 		Charts:    []ChartConfig{{ID: "c1", Type: "bar", XColumn: "x"}},
 	}
@@ -33,7 +36,7 @@ func TestDiskStoreCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	loaded, err := store.Get(r.ID)
+	loaded, err := store.Get(projectID, r.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +47,7 @@ func TestDiskStoreCRUD(t *testing.T) {
 		t.Fatalf("expected 1 chart, got %d", len(loaded.Charts))
 	}
 
-	list, err := store.List()
+	list, err := store.List(projectID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,10 +58,10 @@ func TestDiskStoreCRUD(t *testing.T) {
 		t.Fatalf("expected row_count 2, got %d", list[0].RowCount)
 	}
 
-	if err := store.Delete(r.ID); err != nil {
+	if err := store.Delete(projectID, r.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Get(r.ID); err == nil {
+	if _, err := store.Get(projectID, r.ID); err == nil {
 		t.Fatal("expected error after delete")
 	}
 }

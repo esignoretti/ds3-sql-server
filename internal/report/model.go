@@ -42,8 +42,8 @@ type ReportSummary struct {
 }
 
 type Store interface {
-	List() ([]ReportSummary, error)
+	List(projectID string) ([]ReportSummary, error)
 	Save(report *Report) error
-	Get(id string) (*Report, error)
-	Delete(id string) error
+	Get(projectID, id string) (*Report, error)
+	Delete(projectID, id string) error
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/esignoretti/ds3-sql-server/internal/auth"
 	"github.com/esignoretti/ds3-sql-server/internal/report"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -21,7 +22,6 @@ func NewReportHandler(store report.Store) *ReportHandler {
 type reportSaveRequest struct {
 	Title        string               `json:"title"`
 	SQL          string               `json:"sql"`
-	ProjectID    string               `json:"project_id"`
 	QueryColumns []report.ColumnInfo  `json:"query_columns"`
 	QueryRows    [][]any              `json:"query_rows"`
 	Analysis     any                  `json:"analysis"`
@@ -29,7 +29,13 @@ type reportSaveRequest struct {
 }
 
 func (h *ReportHandler) List(w http.ResponseWriter, r *http.Request) {
-	summaries, err := h.store.List()
+	projectID := r.URL.Query().Get("project")
+	session := auth.GetSession(r)
+	if !session.HasProject(projectID) {
+		http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		return
+	}
+	summaries, err := h.store.List(projectID)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -42,6 +48,13 @@ func (h *ReportHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ReportHandler) Save(w http.ResponseWriter, r *http.Request) {
+	session := auth.GetSession(r)
+	projectID := r.URL.Query().Get("project")
+	if !session.HasProject(projectID) {
+		http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 100<<20) // 100MB limit
 	var req reportSaveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -56,7 +69,7 @@ func (h *ReportHandler) Save(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:    now,
 		Title:        req.Title,
 		SQL:          req.SQL,
-		ProjectID:    req.ProjectID,
+		ProjectID:    projectID,
 		QueryColumns: req.QueryColumns,
 		QueryRows:    req.QueryRows,
 		Analysis:     req.Analysis,
@@ -74,8 +87,14 @@ func (h *ReportHandler) Save(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ReportHandler) Get(w http.ResponseWriter, r *http.Request) {
+	projectID := r.URL.Query().Get("project")
+	session := auth.GetSession(r)
+	if !session.HasProject(projectID) {
+		http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		return
+	}
 	id := chi.URLParam(r, "id")
-	rep, err := h.store.Get(id)
+	rep, err := h.store.Get(projectID, id)
 	if err != nil {
 		http.Error(w, `{"error":"report not found"}`, http.StatusNotFound)
 		return
@@ -85,8 +104,14 @@ func (h *ReportHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ReportHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	projectID := r.URL.Query().Get("project")
+	session := auth.GetSession(r)
+	if !session.HasProject(projectID) {
+		http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		return
+	}
 	id := chi.URLParam(r, "id")
-	if err := h.store.Delete(id); err != nil {
+	if err := h.store.Delete(projectID, id); err != nil {
 		http.Error(w, `{"error":"report not found"}`, http.StatusNotFound)
 		return
 	}
