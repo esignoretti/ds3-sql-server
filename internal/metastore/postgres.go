@@ -292,19 +292,281 @@ func (s *PostgresStore) BumpDataVersion(ctx context.Context, projectID, dataset,
 	return v, nil
 }
 
-// ── Stub methods (replaced by Task 7) ─────────────────────────────
-func (s *PostgresStore) CreateJob(ctx context.Context, j *JobRecord) error { panic("unimplemented") }
-func (s *PostgresStore) UpdateJob(ctx context.Context, j *JobRecord) error { panic("unimplemented") }
-func (s *PostgresStore) GetJob(ctx context.Context, id string) (*JobRecord, error) { panic("unimplemented") }
-func (s *PostgresStore) ListJobs(ctx context.Context, projectID string, limit int) ([]*JobRecord, error) { panic("unimplemented") }
-func (s *PostgresStore) PutCacheEntry(ctx context.Context, e *CacheEntry) error { panic("unimplemented") }
-func (s *PostgresStore) LookupCacheEntry(ctx context.Context, key string) (*CacheEntry, error) { panic("unimplemented") }
-func (s *PostgresStore) DeleteCacheEntry(ctx context.Context, key string) error { panic("unimplemented") }
-func (s *PostgresStore) ListCacheEntries(ctx context.Context) ([]*CacheEntry, error) { panic("unimplemented") }
-func (s *PostgresStore) DeleteCacheEntriesForTable(ctx context.Context, projectID, dataset, table string) error { panic("unimplemented") }
-func (s *PostgresStore) CreateSchedule(ctx context.Context, sc *Schedule) error { panic("unimplemented") }
-func (s *PostgresStore) ListSchedules(ctx context.Context, projectID string) ([]*Schedule, error) { panic("unimplemented") }
-func (s *PostgresStore) GetSchedule(ctx context.Context, id string) (*Schedule, error) { panic("unimplemented") }
-func (s *PostgresStore) DeleteSchedule(ctx context.Context, id string) error { panic("unimplemented") }
-func (s *PostgresStore) UpdateScheduleRun(ctx context.Context, id string, lastRun time.Time, running bool) error { panic("unimplemented") }
-func (s *PostgresStore) GetDueSchedules(ctx context.Context, now time.Time) ([]*Schedule, error) { panic("unimplemented") }
+// ── Jobs ──────────────────────────────────────────────────────────
+
+func (s *PostgresStore) CreateJob(ctx context.Context, j *JobRecord) error {
+	if j.CreatedAt.IsZero() {
+		j.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO jobs (id, project_id, type, sql, status, error, row_count,
+			bytes_scanned, result_location, created_at, started_at, finished_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		j.ID, j.ProjectID, j.Type, j.SQL, j.Status, j.Error, j.RowCount,
+		j.BytesScanned, j.ResultLocation, j.CreatedAt.UTC(), nullTime(j.StartedAt), nullTime(j.FinishedAt))
+	if err != nil {
+		return fmt.Errorf("create job: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) UpdateJob(ctx context.Context, j *JobRecord) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET status=$1, error=$2, row_count=$3, bytes_scanned=$4,
+			result_location=$5, started_at=$6, finished_at=$7 WHERE id=$8`,
+		j.Status, j.Error, j.RowCount, j.BytesScanned, j.ResultLocation,
+		nullTime(j.StartedAt), nullTime(j.FinishedAt), j.ID)
+	if err != nil {
+		return fmt.Errorf("update job: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func scanPgJob(row interface{ Scan(...any) error }) (*JobRecord, error) {
+	var j JobRecord
+	var started, finished sql.NullTime
+	err := row.Scan(&j.ID, &j.ProjectID, &j.Type, &j.SQL, &j.Status, &j.Error,
+		&j.RowCount, &j.BytesScanned, &j.ResultLocation, &j.CreatedAt, &started, &finished)
+	if err != nil {
+		return nil, err
+	}
+	j.CreatedAt = j.CreatedAt.UTC()
+	j.StartedAt = timeFromNull(started)
+	j.FinishedAt = timeFromNull(finished)
+	return &j, nil
+}
+
+const pgJobCols = `id, project_id, type, sql, status, error, row_count,
+	bytes_scanned, result_location, created_at, started_at, finished_at`
+
+func (s *PostgresStore) GetJob(ctx context.Context, id string) (*JobRecord, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+pgJobCols+` FROM jobs WHERE id = $1`, id)
+	j, err := scanPgJob(row)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get job: %w", err)
+	}
+	return j, nil
+}
+
+func (s *PostgresStore) ListJobs(ctx context.Context, projectID string, limit int) ([]*JobRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+pgJobCols+` FROM jobs WHERE project_id = $1 ORDER BY created_at DESC LIMIT $2`,
+		projectID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+	defer rows.Close()
+	out := []*JobRecord{}
+	for rows.Next() {
+		j, err := scanPgJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+// ── Cache Index ────────────────────────────────────────────────────
+
+func (s *PostgresStore) PutCacheEntry(ctx context.Context, e *CacheEntry) error {
+	if e.CreatedAt.IsZero() {
+		e.CreatedAt = time.Now().UTC()
+	}
+	if e.LastAccessAt.IsZero() {
+		e.LastAccessAt = e.CreatedAt
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO cache_index (key, project_id, sql_norm, table_versions, location, size_bytes, created_at, last_access_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		 ON CONFLICT (key) DO UPDATE SET
+			project_id=EXCLUDED.project_id, sql_norm=EXCLUDED.sql_norm,
+			table_versions=EXCLUDED.table_versions, location=EXCLUDED.location,
+			size_bytes=EXCLUDED.size_bytes, last_access_at=EXCLUDED.last_access_at`,
+		e.Key, e.ProjectID, e.SQLNorm, e.TableVersions, e.Location, e.SizeBytes,
+		e.CreatedAt.UTC(), e.LastAccessAt.UTC())
+	if err != nil {
+		return fmt.Errorf("put cache entry: %w", err)
+	}
+	return nil
+}
+
+func scanPgCache(row interface{ Scan(...any) error }) (*CacheEntry, error) {
+	var e CacheEntry
+	err := row.Scan(&e.Key, &e.ProjectID, &e.SQLNorm, &e.TableVersions, &e.Location,
+		&e.SizeBytes, &e.CreatedAt, &e.LastAccessAt)
+	if err != nil {
+		return nil, err
+	}
+	e.CreatedAt = e.CreatedAt.UTC()
+	e.LastAccessAt = e.LastAccessAt.UTC()
+	return &e, nil
+}
+
+const pgCacheCols = `key, project_id, sql_norm, table_versions, location, size_bytes, created_at, last_access_at`
+
+func (s *PostgresStore) LookupCacheEntry(ctx context.Context, key string) (*CacheEntry, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+pgCacheCols+` FROM cache_index WHERE key = $1`, key)
+	e, err := scanPgCache(row)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup cache entry: %w", err)
+	}
+	return e, nil
+}
+
+func (s *PostgresStore) DeleteCacheEntry(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM cache_index WHERE key = $1`, key)
+	if err != nil {
+		return fmt.Errorf("delete cache entry: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) ListCacheEntries(ctx context.Context) ([]*CacheEntry, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+pgCacheCols+` FROM cache_index ORDER BY last_access_at`)
+	if err != nil {
+		return nil, fmt.Errorf("list cache entries: %w", err)
+	}
+	defer rows.Close()
+	out := []*CacheEntry{}
+	for rows.Next() {
+		e, err := scanPgCache(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (s *PostgresStore) DeleteCacheEntriesForTable(ctx context.Context, projectID, dataset, table string) error {
+	// table_versions is a JSON object mapping each referenced table's
+	// fully-qualified name to its data_version. Match by JSON key.
+	needle := `"` + projectID + "/" + dataset + "/" + table + `":`
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM cache_index WHERE project_id = $1 AND table_versions LIKE $2`,
+		projectID, "%"+needle+"%")
+	if err != nil {
+		return fmt.Errorf("delete cache entries for table: %w", err)
+	}
+	return nil
+}
+
+// ── Schedules ──────────────────────────────────────────────────────
+
+func (s *PostgresStore) CreateSchedule(ctx context.Context, sc *Schedule) error {
+	if sc.CreatedAt.IsZero() {
+		sc.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO schedules (id, project_id, cron, sql, into_table, owner, next_run_at, last_run_at, running, created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		sc.ID, sc.ProjectID, sc.Cron, sc.SQL, sc.IntoTable, sc.Owner,
+		nullTime(sc.NextRunAt), nullTime(sc.LastRunAt), sc.Running, sc.CreatedAt.UTC())
+	if err != nil {
+		return fmt.Errorf("create schedule: %w", err)
+	}
+	return nil
+}
+
+func scanPgSchedule(row interface{ Scan(...any) error }) (*Schedule, error) {
+	var sc Schedule
+	var next, last sql.NullTime
+	err := row.Scan(&sc.ID, &sc.ProjectID, &sc.Cron, &sc.SQL, &sc.IntoTable, &sc.Owner,
+		&next, &last, &sc.Running, &sc.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	sc.NextRunAt = timeFromNull(next)
+	sc.LastRunAt = timeFromNull(last)
+	sc.CreatedAt = sc.CreatedAt.UTC()
+	return &sc, nil
+}
+
+const pgScheduleCols = `id, project_id, cron, sql, into_table, owner, next_run_at, last_run_at, running, created_at`
+
+func (s *PostgresStore) ListSchedules(ctx context.Context, projectID string) ([]*Schedule, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+pgScheduleCols+` FROM schedules WHERE project_id = $1 ORDER BY created_at`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list schedules: %w", err)
+	}
+	defer rows.Close()
+	out := []*Schedule{}
+	for rows.Next() {
+		sc, err := scanPgSchedule(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sc)
+	}
+	return out, rows.Err()
+}
+
+func (s *PostgresStore) GetSchedule(ctx context.Context, id string) (*Schedule, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+pgScheduleCols+` FROM schedules WHERE id = $1`, id)
+	sc, err := scanPgSchedule(row)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get schedule: %w", err)
+	}
+	return sc, nil
+}
+
+func (s *PostgresStore) DeleteSchedule(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM schedules WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete schedule: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) UpdateScheduleRun(ctx context.Context, id string, lastRun time.Time, running bool) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE schedules SET last_run_at = $1, running = $2 WHERE id = $3`,
+		nullTime(lastRun), running, id)
+	if err != nil {
+		return fmt.Errorf("update schedule run: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetDueSchedules(ctx context.Context, now time.Time) ([]*Schedule, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+pgScheduleCols+` FROM schedules
+		 WHERE running = FALSE AND next_run_at IS NOT NULL AND next_run_at <= $1`,
+		now.UTC())
+	if err != nil {
+		return nil, fmt.Errorf("get due schedules: %w", err)
+	}
+	defer rows.Close()
+	out := []*Schedule{}
+	for rows.Next() {
+		sc, err := scanPgSchedule(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sc)
+	}
+	return out, rows.Err()
+}
