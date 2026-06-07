@@ -69,26 +69,17 @@ func NewEngine(maxRows, maxExecutionSecs int, maxResultBytes int64, poolSize, th
 	}, nil
 }
 
-func (e *Engine) Query(sqlStr string, accessKey, secretKey, rawEndpoint string) *Result {
-	start := time.Now()
-
+func applyS3Creds(db *sql.DB, accessKey, secretKey, rawEndpoint string) {
 	useSSL := true
 	endpoint := rawEndpoint
 	if idx := strings.Index(endpoint, "://"); idx >= 0 {
-		proto := endpoint[:idx]
-		useSSL = proto == "https"
+		useSSL = endpoint[:idx] == "https"
 		endpoint = endpoint[idx+3:]
 	}
-
-	db := <-e.pool
-	defer func() { e.pool <- db }()
-
 	useSSLStr := "false"
 	if useSSL {
 		useSSLStr = "true"
 	}
-
-	// Set S3 credentials
 	db.Exec("CREATE OR REPLACE SECRET ds3_s3 (TYPE S3, KEY_ID '" + accessKey + "', SECRET '" + secretKey + "', ENDPOINT '" + endpoint + "', REGION 'us-east-1', USE_SSL " + useSSLStr + ", URL_STYLE 'path')")
 	db.Exec("SET s3_access_key_id='" + accessKey + "'")
 	db.Exec("SET s3_secret_access_key='" + secretKey + "'")
@@ -100,6 +91,15 @@ func (e *Engine) Query(sqlStr string, accessKey, secretKey, rawEndpoint string) 
 	} else {
 		db.Exec("SET s3_use_ssl=false")
 	}
+}
+
+func (e *Engine) Query(sqlStr string, accessKey, secretKey, rawEndpoint string) *Result {
+	start := time.Now()
+
+	db := <-e.pool
+	defer func() { e.pool <- db }()
+
+	applyS3Creds(db, accessKey, secretKey, rawEndpoint)
 
 	// Set memory limit
 	memSQL := "SET memory_limit='" + e.memoryLimit + "'"
