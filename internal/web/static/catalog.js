@@ -152,16 +152,19 @@ function catalogRegisterFromBrowse(bucket, key) {
   var ds = document.getElementById('catalog-detail-title');
   var dataset = ds ? ds.textContent.replace(' — Browse & Import', '') : '';
   if (!dataset) { alert('Select a dataset first'); return; }
-  // Use the actual file path; user can edit to add a glob.
-  var filePath = 's3://' + bucket + '/' + key;
-  var fileName = key.split('/').pop().replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
+  // Default to parent directory glob so new files are automatically included.
+  var ext = key.split('.').pop();
+  var parentKey = key.split('/').slice(0, -1).join('/');
+  var globPath = parentKey ? 's3://' + bucket + '/' + parentKey + '/*.' + ext : 's3://' + bucket + '/*.' + ext;
+  var defaultName = (parentKey.split('/').pop() || bucket).replace(/[^a-zA-Z0-9_]/g, '_');
   showModal(
     '<h3 style="margin:0 0 1rem 0;font-size:1rem;">Register Table in ' + escHtml(dataset) + '</h3>' +
     '<div style="display:flex;flex-direction:column;gap:0.75rem;">' +
-    '<label><span style="font-size:0.85rem;color:var(--text-muted);">Table name</span><input id="reg-name" class="input" value="' + escAttr(fileName) + '" style="width:100%;margin-top:0.25rem;"></label>' +
-    '<label><span style="font-size:0.85rem;color:var(--text-muted);">Path</span><input id="reg-location" class="input" value="' + escAttr(filePath) + '" style="width:100%;margin-top:0.25rem;"></label>' +
+    '<label><span style="font-size:0.85rem;color:var(--text-muted);">Table name</span><input id="reg-name" class="input" value="' + escAttr(defaultName) + '" style="width:100%;margin-top:0.25rem;"></label>' +
+    '<label><span style="font-size:0.85rem;color:var(--text-muted);">Path (<code>*</code> matches all files)</span><input id="reg-location" class="input" value="' + escAttr(globPath) + '" style="width:100%;margin-top:0.25rem;"></label>' +
     '<div style="font-size:0.8rem;color:var(--text-muted);background:var(--surface-2);padding:0.5rem;border-radius:var(--radius);line-height:1.4;">' +
-    '💡 Replace the filename with <code>*</code> to match all files in the directory. New files are automatically included at query time.' +
+    '✅ Path ends with <code>*.' + escHtml(ext) + '</code> — all <code>.' + escHtml(ext) + '</code> files in this directory are read at query time. ' +
+    'Drop a new file and <code>SELECT * FROM table</code> will see it immediately — no registration needed.' +
     '</div>' +
     '<div><span style="font-size:0.85rem;color:var(--text-muted);">Format (auto-detected if unsure)</span>' +
     '<div style="display:flex;gap:1rem;margin-top:0.35rem;flex-wrap:wrap;">' +
