@@ -119,6 +119,13 @@ func (s *Service) RegisterTable(ctx context.Context, in RegisterTableInput, acce
 	if schemaRes.Error != "" {
 		return nil, fmt.Errorf("infer schema: %s", schemaRes.Error)
 	}
+	// Use the detected format (from which reader actually worked) rather than
+	// trusting the user-supplied format, which may be wrong (e.g. "parquet"
+	// for a CSV file). If detection didn't run (e.g. old InferSchema), keep
+	// the user-supplied format as-is.
+	if schemaRes.Detected != "" {
+		in.Format = schemaRes.Detected
+	}
 	cols := make([]metastore.Column, len(schemaRes.Columns))
 	for i, c := range schemaRes.Columns {
 		cols[i] = metastore.Column{Name: c.Name, Type: c.Type, Nullable: c.Nullable}

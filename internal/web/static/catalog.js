@@ -60,21 +60,18 @@ function toggleDataset(ds) {
 
 function promptRegisterTable(dataset) {
   if (!tabState.browse.project) { alert('Select a project first'); return; }
-  // Build the register URL with the current project
-  var baseUrl = '/datasets/' + encodeURIComponent(dataset) + '/tables?project=' + encodeURIComponent(tabState.browse.project);
   var name = prompt('Table name (letters, digits, underscore):');
   if (!name) return;
-  var location = prompt('S3 path or glob, e.g. s3://my-bucket/path/*.parquet:');
+  var location = prompt('S3 path or glob, e.g. s3://my-bucket/path/*.parquet');
   if (!location) return;
-  var format = prompt('Format (parquet, csv, json, tsv):', 'parquet');
-  if (!format) return;
-  fetch(baseUrl, {
+  fetch('/datasets/' + encodeURIComponent(dataset) + '/tables?project=' + encodeURIComponent(tabState.browse.project), {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({name: name, location: location, format: format})
+    body: JSON.stringify({name: name, location: location})
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
-    if (d.error) { alert(d.error); return; }
+    if (d.error) { alert('Error: ' + d.error); return; }
+    alert('Table "' + name + '" created. Format: ' + (d.format || 'auto') + ', ' + ((d.stats && d.stats.row_count) || 0) + ' rows');
     // Reload tables for this dataset — ensure visible
     var ul = document.getElementById('ds-' + dataset);
     if (ul) {

@@ -13,9 +13,10 @@ type SchemaColumn struct {
 }
 
 type SchemaResult struct {
-	Columns   []SchemaColumn `json:"columns"`
-	ElapsedMs int64          `json:"elapsed_ms"`
-	Error     string         `json:"error,omitempty"`
+	Columns    []SchemaColumn `json:"columns"`
+	ElapsedMs  int64          `json:"elapsed_ms"`
+	Error      string         `json:"error,omitempty"`
+	Detected   string         `json:"detected,omitempty"` // actual reader format that worked
 }
 
 func (e *Engine) InferSchema(path, accessKey, secretKey, rawEndpoint string) *SchemaResult {
@@ -29,10 +30,19 @@ func (e *Engine) InferSchema(path, accessKey, secretKey, rawEndpoint string) *Sc
 
 	var rows *sql.Rows
 	var lastErr error
+	var detected string
 	for _, reader := range []string{"read_parquet", "read_csv_auto", "read_json_auto"} {
 		schemaSQL := fmt.Sprintf("DESCRIBE SELECT * FROM %s('%s')", reader, path)
 		rows, lastErr = db.Query(schemaSQL)
 		if lastErr == nil {
+			switch reader {
+			case "read_parquet":
+				detected = "parquet"
+			case "read_csv_auto":
+				detected = "csv"
+			case "read_json_auto":
+				detected = "json"
+			}
 			break
 		}
 	}
@@ -67,5 +77,6 @@ func (e *Engine) InferSchema(path, accessKey, secretKey, rawEndpoint string) *Sc
 	return &SchemaResult{
 		Columns:   columns,
 		ElapsedMs: time.Since(start).Milliseconds(),
+		Detected:  detected,
 	}
 }
