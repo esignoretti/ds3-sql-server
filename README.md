@@ -22,6 +22,7 @@ A lightweight, stateless sidecar service that enables SQL querying of data store
 - **Jobs panel** — query/CTAS/load job history in the query tab; click a job to restore its SQL into the editor
 - **Postgres metastore** — optional `DS3SQL_METASTORE_DRIVER=postgres` backend for high-availability coordinator deployments; shared conformance suite verifies identical behaviour with the default SQLite store
 - **Partition pruning** — `WHERE` filters on partition columns automatically reduce the set of files scanned (`=`, `IN`, `>`, `>=`, `<`, `<=`, combined with `AND`); unsupported forms fall back to a full scan (correctness-preserving)
+- **Multi-tenant isolation** — all APIs are project-scoped with session-derived project context; reports are namespaced by project ID; managed table locations include the project ID to prevent cross-project data collisions; worker data-plane guarded by constant-time shared-secret comparison
 
 ## Quick Start
 

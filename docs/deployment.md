@@ -105,6 +105,28 @@ DS3SQL_TEST_POSTGRES_DSN="postgres://test:test@localhost:5432/ds3sql_test?sslmod
 
 See the [Configuration Reference](configuration.md) for all available settings.
 
+## Security
+
+### Worker data-plane authentication
+
+The coordinator→worker control channel is authenticated with a shared secret. This is **required** for `role=coordinator` and `role=worker` — the server will refuse to start without `cluster.shared_secret` (or `DS3SQL_CLUSTER_SHARED_SECRET`).
+
+The secret comparison uses `crypto/subtle.ConstantTimeCompare` to prevent timing side-channels.
+
+### S3 credential safety
+
+All S3 access keys, secret keys, and endpoints passed to the DuckDB engine are single-quote-escaped (`'` → `''`) before being embedded in SQL statements, preventing SQL injection through credential values.
+
+### Multi-tenant isolation
+
+- **Job/schedule/report access**: All jobs, schedules, and reports are scoped to the caller's project. API handlers verify ownership before returning or mutating data.
+- **Managed data locations**: Managed table storage paths include the project ID (`_managed/<projectID>/<dataset>/<table>/`), preventing cross-project data collisions at the object-storage level.
+- **Session-derived context**: Project context is derived from the authenticated session, not from client-supplied request bodies.
+
+### TLS / mTLS
+
+The worker data-plane runs on the same HTTP listener as the public API. For production deployments, terminate TLS at a reverse proxy (e.g. Envoy, ingress-nginx) or bind the listener to a private network interface. Full mTLS between coordinator and worker is a future enhancement.
+
 ## Resource Requirements
 
 | Resource | Request | Limit |

@@ -121,6 +121,12 @@ ds3sql-server --role coordinator
 
 Env override: `DS3SQL_ROLE=coordinator`
 
+## Security Notes
+
+- **`cluster.shared_secret`** (`DS3SQL_CLUSTER_SHARED_SECRET`): Required for `role=coordinator` and `role=worker`. The server will not start without it. Authentication uses constant-time comparison (`crypto/subtle`).
+- **S3 credential injection**: All access keys, secret keys, and endpoints are SQL-escaped (single quotes doubled) before being embedded in DuckDB statements, preventing injection.
+- **Project isolation**: All API endpoints derive project context from the authenticated session. Managed table storage paths include the project ID to prevent cross-tenant data collisions.
+
 ## CLI Configuration
 
 The CLI stores session state in `~/.ds3sql/config` (JSON). This file is managed automatically by `ds3sql login` and `ds3sql logout`.
