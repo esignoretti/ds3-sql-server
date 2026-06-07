@@ -18,7 +18,7 @@ func NewLocalExecutor(cat *catalog.Service, engine *query.Engine) *LocalExecutor
 }
 
 func (l *LocalExecutor) Execute(ctx context.Context, req ExecRequest) *query.Result {
-	bindings, err := l.cat.Resolve(ctx, req.ProjectID, req.SQL)
+	bindings, err := l.cat.ResolvePruned(ctx, req.ProjectID, req.SQL)
 	if err != nil {
 		return &query.Result{Error: "resolve tables: " + err.Error()}
 	}

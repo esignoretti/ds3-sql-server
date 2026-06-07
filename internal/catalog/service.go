@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/esignoretti/ds3-sql-server/internal/metastore"
+	"github.com/esignoretti/ds3-sql-server/internal/planner"
 	"github.com/esignoretti/ds3-sql-server/internal/query"
 )
 
@@ -173,6 +174,69 @@ func referencesTable(sql, dataset, name string) bool {
 		}
 	}
 	return false
+}
+
+// SaveTablePartitions persists an updated partition list (and row count) for a
+// table by recreating its catalog row. Phase 3 load/CTAS uses this after writing
+// data; tests use it to inject partition layouts.
+func (s *Service) SaveTablePartitions(ctx context.Context, t *metastore.Table) error {
+	if err := s.store.DeleteTable(ctx, t.ProjectID, t.Dataset, t.Name); err != nil {
+		return err
+	}
+	// Preserve the data version across the rewrite.
+	t.CreatedAt = t.CreatedAt // no-op; CreateTable refreshes UpdatedAt
+	return s.store.CreateTable(ctx, t)
+}
+
+// toPlannerPartitions converts stored metastore partitions to planner partitions.
+func toPlannerPartitions(in []metastore.Partition) []planner.Partition {
+	out := make([]planner.Partition, len(in))
+	for i, p := range in {
+		out[i] = planner.Partition{
+			Values:   p.Values,
+			Location: p.Location,
+			RowCount: p.RowCount,
+			Min:      p.Min,
+			Max:      p.Max,
+		}
+	}
+	return out
+}
+
+// ResolvePruned is like Resolve, but for partitioned tables with a stored
+// partition list it builds the reader expression from only the partitions that
+// can satisfy the query's WHERE predicates (partition pruning). Tables without a
+// partition list fall back to the base-location reader.
+func (s *Service) ResolvePruned(ctx context.Context, projectID, sql string) ([]query.ViewBinding, error) {
+	datasets, err := s.store.ListDatasets(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	var bindings []query.ViewBinding
+	for _, ds := range datasets {
+		tables, err := s.store.ListTables(ctx, projectID, ds.Name)
+		if err != nil {
+			return nil, err
+		}
+		for _, t := range tables {
+			if !referencesTable(sql, t.Dataset, t.Name) {
+				continue
+			}
+			reader := readerSQL(t.Location, t.Format)
+			if len(t.PartitionColumns) > 0 && len(t.Stats.Partitions) > 0 {
+				kept := planner.Prune(sql, t.PartitionColumns, toPlannerPartitions(t.Stats.Partitions))
+				if len(kept) > 0 {
+					reader = planner.ReaderLocations(kept, t.Format)
+				}
+			}
+			bindings = append(bindings, query.ViewBinding{
+				Schema:    t.Dataset,
+				Name:      t.Name,
+				ReaderSQL: reader,
+			})
+		}
+	}
+	return bindings, nil
 }
 
 // PrefixDeleter deletes all objects under an s3 prefix (s3.Client satisfies it).
