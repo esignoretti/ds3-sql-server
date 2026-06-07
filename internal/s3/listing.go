@@ -102,3 +102,36 @@ func (c *Client) ListObjects(ctx context.Context, bucket, prefix, delimiter stri
 
 	return &resp, nil
 }
+
+// DeletePrefix deletes every object whose key starts with prefix. It paginates
+// the listing with a continuation token and deletes objects one at a time
+// (DS3-compatible; avoids the batch DeleteObjects API). Used to clear a managed
+// table's location for overwrite loads and DROP.
+func (c *Client) DeletePrefix(ctx context.Context, bucket, prefix string) error {
+	var token *string
+	for {
+		out, err := c.client.ListObjectsV2(ctx, &awss3.ListObjectsV2Input{
+			Bucket:            &bucket,
+			Prefix:            &prefix,
+			ContinuationToken: token,
+		})
+		if err != nil {
+			return fmt.Errorf("list for delete %q: %w", prefix, err)
+		}
+		for _, obj := range out.Contents {
+			if obj.Key == nil {
+				continue
+			}
+			if _, err := c.client.DeleteObject(ctx, &awss3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    obj.Key,
+			}); err != nil {
+				return fmt.Errorf("delete %q: %w", *obj.Key, err)
+			}
+		}
+		if out.IsTruncated == nil || !*out.IsTruncated {
+			return nil
+		}
+		token = out.NextContinuationToken
+	}
+}
