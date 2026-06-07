@@ -10,6 +10,7 @@ import (
 
 	"github.com/esignoretti/ds3-sql-server/internal/catalog"
 	"github.com/esignoretti/ds3-sql-server/internal/metastore"
+	"github.com/esignoretti/ds3-sql-server/internal/s3"
 )
 
 // LoadRequest is a batch-load job: read Source via DuckDB and write Parquet into
@@ -76,15 +77,23 @@ func (w *Writer) RunLoad(ctx context.Context, projectID string, req LoadRequest,
 		}
 		bucket = b
 	}
-	location := w.managedLocation(bucket, dataset, table)
+	location := w.managedLocation(bucket, projectID, dataset, table)
 
-	if mode == "overwrite" && w.deleter != nil {
+	if mode == "overwrite" {
+		deleter := w.deleter
+		if deleter == nil {
+			client, err := s3.NewClient(ctx, accessKey, secretKey, endpoint)
+			if err != nil {
+				return nil, fmt.Errorf("overwrite: create s3 client: %w", err)
+			}
+			deleter = client
+		}
 		b, prefix, ok := splitS3(location)
 		if !ok {
 			// Local path (tests): use the location dir as bucket, "" prefix.
 			b, prefix = location, ""
 		}
-		if err := w.deleter.DeletePrefix(ctx, b, prefix); err != nil {
+		if err := deleter.DeletePrefix(ctx, b, prefix); err != nil {
 			return nil, fmt.Errorf("overwrite clear: %w", err)
 		}
 	}

@@ -92,7 +92,7 @@ func (w *Writer) RunCTAS(ctx context.Context, projectID, sql, accessKey, secretK
 		}
 		bucket = b
 	}
-	location := w.managedLocation(bucket, plan.Dataset, plan.Table)
+	location := w.managedLocation(bucket, projectID, plan.Dataset, plan.Table)
 
 	// Resolve source catalog tables referenced by the inner SELECT.
 	bindings, err := w.cat.Resolve(ctx, projectID, plan.Select)

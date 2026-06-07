@@ -63,12 +63,13 @@ func NewWriter(engine writeEngine, cat catalogService, store versionBumper, cach
 
 // managedLocation returns the base location for a managed table's data files.
 // In tests localBase makes this a filesystem directory; in production it is an
-// s3:// prefix under the storage-class bucket.
-func (w *Writer) managedLocation(bucket, dataset, table string) string {
+// s3:// prefix under the storage-class bucket. The projectID is included in the
+// path to prevent cross-project collisions (C4).
+func (w *Writer) managedLocation(bucket, projectID, dataset, table string) string {
 	if w.localBase != "" {
-		return filepath.Join(w.localBase, "_managed", dataset, table)
+		return filepath.Join(w.localBase, "_managed", projectID, dataset, table)
 	}
-	return fmt.Sprintf("s3://%s/_managed/%s/%s/", bucket, dataset, table)
+	return fmt.Sprintf("s3://%s/_managed/%s/%s/%s/", bucket, projectID, dataset, table)
 }
 
 // afterWrite bumps the table's data_version and invalidates dependent

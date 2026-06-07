@@ -34,7 +34,7 @@ func newLoadWriter(t *testing.T, del *recordingDeleter) (*Writer, *catalog.Servi
 	}
 	cat := catalog.NewService(store, eng)
 	base := t.TempDir()
-	os.MkdirAll(filepath.Join(base, "_managed", "sales"), 0755)
+	os.MkdirAll(filepath.Join(base, "_managed", "p1", "sales"), 0755)
 	w := NewWriter(eng, cat, store, noopCache{}, localStorage{dir: base}, del)
 	w.localBase = base
 	return w, cat

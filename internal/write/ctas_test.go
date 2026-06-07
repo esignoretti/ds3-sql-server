@@ -116,7 +116,7 @@ func newCTASWriter(t *testing.T) (*Writer, *catalog.Service, string) {
 	baseDir := t.TempDir()
 	// Ensure the managed directory exists so DuckDB COPY can write into it.
 	// DuckDB creates the leaf directory but needs the parent chain to exist.
-	os.MkdirAll(filepath.Join(baseDir, "_managed", "sales"), 0755)
+	os.MkdirAll(filepath.Join(baseDir, "_managed", "p1", "sales"), 0755)
 	w := NewWriter(eng, cat, store, noopCache{}, localStorage{dir: baseDir}, nil)
 	// Override managedLocation to emit local paths instead of s3:// in tests.
 	w.localBase = baseDir

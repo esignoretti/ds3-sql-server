@@ -36,8 +36,8 @@ func (c *fakeCache) DeleteCacheEntriesForTable(ctx context.Context, p, d, n stri
 
 func TestManagedLocation(t *testing.T) {
 	w := &Writer{}
-	got := w.managedLocation("ds3-fast", "sales", "orders")
-	want := "s3://ds3-fast/_managed/sales/orders/"
+	got := w.managedLocation("ds3-fast", "p1", "sales", "orders")
+	want := "s3://ds3-fast/_managed/p1/sales/orders/"
 	if got != want {
 		t.Fatalf("managedLocation = %q, want %q", got, want)
 	}
