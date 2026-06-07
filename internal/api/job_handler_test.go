@@ -112,6 +112,55 @@ func TestJobHandler_WaitTimeoutReturns202(t *testing.T) {
 	}
 }
 
+func TestJobHandler_RoutesCTAS(t *testing.T) {
+	mgr := job.NewManager(stubExecutor{})
+	mgr.SetWriteExecutor(stubWriteExec{})
+	h := NewJobHandler(mgr)
+
+	body := `{"sql":"CREATE TABLE sales.daily AS SELECT 1"}`
+	req := httptest.NewRequest("POST", "/jobs", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	h.SubmitWithCreds(w, req, "p1", "ak", "sk", "http://localhost:9000")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for async ctas, got %d body=%s", w.Code, w.Body.String())
+	}
+	var j job.Job
+	if err := json.Unmarshal(w.Body.Bytes(), &j); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if j.Type != "ctas" {
+		t.Fatalf("expected type ctas, got %q", j.Type)
+	}
+}
+
+func TestJobHandler_RoutesLoad(t *testing.T) {
+	mgr := job.NewManager(stubExecutor{})
+	mgr.SetWriteExecutor(stubWriteExec{})
+	h := NewJobHandler(mgr)
+
+	body := `{"type":"load","source":"s3://b/*.csv","into":"sales.ev","format":"csv","mode":"append"}`
+	req := httptest.NewRequest("POST", "/jobs", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	h.SubmitWithCreds(w, req, "p1", "ak", "sk", "http://localhost:9000")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for async load, got %d body=%s", w.Code, w.Body.String())
+	}
+	var j job.Job
+	_ = json.Unmarshal(w.Body.Bytes(), &j)
+	if j.Type != "load" {
+		t.Fatalf("expected type load, got %q", j.Type)
+	}
+}
+
+type stubWriteExec struct{}
+
+func (stubWriteExec) RunCTAS(ctx context.Context, projectID, sql, ak, sk, ep string) (string, error) {
+	return "sales.daily", nil
+}
+func (stubWriteExec) RunLoad(ctx context.Context, projectID string, req job.LoadRequest, ak, sk, ep string) (string, error) {
+	return req.Into, nil
+}
+
 func TestJobHandler_ListAndCancel(t *testing.T) {
 	mgr := job.NewManager(slowExecutor{delay: 200 * time.Millisecond})
 	h := NewJobHandler(mgr)

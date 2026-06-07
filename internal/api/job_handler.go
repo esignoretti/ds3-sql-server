@@ -3,10 +3,12 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/esignoretti/ds3-sql-server/internal/job"
+	"github.com/esignoretti/ds3-sql-server/internal/write"
 )
 
 type JobHandler struct {
@@ -17,22 +19,64 @@ func NewJobHandler(mgr *job.Manager) *JobHandler {
 	return &JobHandler{mgr: mgr}
 }
 
-// SubmitWithCreds submits a job. With ?wait=<dur> it blocks up to that duration
-// (default 2s) for a synchronous fast-path: if the job finishes in time it is
-// returned inline (200); otherwise the job id is returned with 202 for polling.
+// SubmitWithCreds runs query jobs synchronously (Phase 1 fast-path) and routes
+// ctas/load jobs to the async write path (returns 202 + the queued job).
 func (h *JobHandler) SubmitWithCreds(w http.ResponseWriter, r *http.Request, projectID, accessKey, secretKey, endpoint string) {
 	var req struct {
-		SQL string `json:"sql"`
+		Type        string   `json:"type"`
+		SQL         string   `json:"sql"`
+		Source      string   `json:"source"`
+		Into        string   `json:"into"`
+		Format      string   `json:"format"`
+		PartitionBy []string `json:"partition_by"`
+		Mode        string   `json:"mode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
+
+	// Explicit load type.
+	if strings.EqualFold(req.Type, "load") {
+		if req.Source == "" || req.Into == "" {
+			http.Error(w, `{"error":"load requires source and into"}`, http.StatusBadRequest)
+			return
+		}
+		j := h.mgr.Submit(r.Context(), job.ExecRequest{
+			Type:      "load",
+			ProjectID: projectID,
+			AccessKey: accessKey,
+			SecretKey: secretKey,
+			Endpoint:  endpoint,
+			Load: &job.LoadRequest{
+				Source: req.Source, Into: req.Into, Format: req.Format,
+				PartitionBy: req.PartitionBy, Mode: req.Mode,
+			},
+		})
+		writeJSON(w, http.StatusAccepted, j)
+		return
+	}
+
 	if req.SQL == "" {
 		http.Error(w, `{"error":"sql field is required"}`, http.StatusBadRequest)
 		return
 	}
 
+	// CTAS detected by SQL shape -> async write path.
+	if write.IsCTAS(req.SQL) {
+		j := h.mgr.Submit(r.Context(), job.ExecRequest{
+			Type:      "ctas",
+			SQL:       req.SQL,
+			ProjectID: projectID,
+			AccessKey: accessKey,
+			SecretKey: secretKey,
+			Endpoint:  endpoint,
+		})
+		writeJSON(w, http.StatusAccepted, j)
+		return
+	}
+
+	// Plain query -> synchronous fast-path with wait.
 	wait := 2 * time.Second
 	if v := r.URL.Query().Get("wait"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
@@ -58,16 +102,24 @@ func (h *JobHandler) SubmitWithCreds(w http.ResponseWriter, r *http.Request, pro
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	if cur, ok := h.mgr.Get(j.ID); ok {
 		j = cur
 	}
 	if !isTerminal(j.Status) {
-		w.WriteHeader(http.StatusAccepted)
-	} else if j.Status == "failed" {
-		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, http.StatusAccepted, j)
+		return
 	}
-	json.NewEncoder(w).Encode(j)
+	if j.Status == "failed" {
+		writeJSON(w, http.StatusBadRequest, j)
+		return
+	}
+	writeJSON(w, http.StatusOK, j)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
 }
 
 func isTerminal(status string) bool {
