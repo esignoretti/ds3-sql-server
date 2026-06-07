@@ -41,7 +41,18 @@
       <div id="analytics-panel-content"></div>
     </div>
   </div>
+
+  <div class="card" style="margin:0;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+      <span style="font-weight:600;">Recent Jobs</span>
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:0.15rem 0.5rem;" onclick="loadJobsPanel()">↻ Refresh</button>
+    </div>
+    <div id="jobs-panel-content" style="overflow-x:auto;">
+      <p style="color:var(--text-muted);font-size:0.85rem;">No jobs yet.</p>
+    </div>
+  </div>
 </div>
 
 <script src="/static/query.js"></script>
+<script src="/static/jobs.js"></script>
 {{end}}

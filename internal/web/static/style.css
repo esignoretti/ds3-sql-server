@@ -766,3 +766,15 @@ tbody tr:hover {
 .catalog-empty { color:var(--text-muted); font-size:0.85rem; }
 .catalog-schema { width:100%; border-collapse:collapse; font-size:0.85rem; }
 .catalog-schema th, .catalog-schema td { text-align:left; padding:0.25rem 0.5rem; border-bottom:0.0625rem solid var(--border); }
+
+/* Jobs panel */
+.jobs-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+.jobs-table th, .jobs-table td { text-align:left; padding:0.3rem 0.5rem; border-bottom:0.0625rem solid var(--border); }
+.jobs-row { cursor:pointer; }
+.jobs-row:hover { background:var(--surface-2); }
+.jobs-sql { font-family:monospace; color:var(--text-muted); max-width:380px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.jobs-when { color:var(--text-muted); white-space:nowrap; }
+.job-status { padding:0.05rem 0.4rem; border-radius:var(--radius); font-size:0.72rem; }
+.job-done { background:rgba(39,182,129,0.18); color:#27B681; }
+.job-failed { background:rgba(248,113,113,0.18); color:#f87171; }
+.job-running, .job-queued { background:rgba(243,179,86,0.18); color:#F3B356; }
