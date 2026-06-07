@@ -152,3 +152,32 @@ In-memory async job manager. Jobs can be `query`, `ctas`, or `load`. Plain queri
 | S3 Discovery | Bucket and prefix listing via aws-sdk-go-v2 |
 | Web UI | Login, browse, and query pages via html/template + HTMX |
 | REST API | JSON endpoints for all functionality |
+
+## Phase 4: Product Polish
+
+Phase 4 adds a richer Web UI, an optional Postgres-backed metastore for high-availability deployments, and query-time partition pruning to reduce I/O on partitioned managed tables.
+
+### Web Catalog Browser
+
+The primary left-navigation in the Web UI is now the **catalog browser** (datasets → tables → columns), backed by the `/datasets…` JSON API and a server-rendered `/ui/catalog` fragment (`internal/api/catalog_fragment_handler.go`). The interactive tree is driven by `internal/web/static/catalog.js`, which fetches datasets and tables on demand and seeds the query editor when a table is clicked.
+
+Raw bucket browsing (listing buckets → objects) is demoted to the secondary **Buckets** tab. The query tab includes a **jobs/history panel** (`internal/web/static/jobs.js`) that calls `GET /jobs` to display recent query, CTAS, and load jobs, and allows clicking a job to restore its SQL into the editor.
+
+### Postgres Metastore
+
+`internal/metastore/postgres.go` implements the full `Store` interface (datasets, tables, jobs, cache_index, schedules) against PostgreSQL. It mirrors the SQLite schema using Postgres-native types (`TIMESTAMPTZ` for timestamps, `BIGINT` for integer counters, `JSONB` for partition/schema/stats payloads) and uses `pgx/v5/stdlib` (via `database/sql`) for connection pooling.
+
+The Postgres backend is selected at startup by setting `metastore.driver` to `postgres` and providing a DSN via `metastore.dsn`. A shared `testStoreConformance` suite (defined in `internal/metastore/conformance_test.go`) runs against both the SQLite and Postgres backends, ensuring identical behaviour. The Postgres conformance test skips when `DS3SQL_TEST_POSTGRES_DSN` is unset.
+
+### Partition Pruning
+
+`internal/planner/prune.go` is a pure predicate analyzer that parses `WHERE` clauses from an incoming SQL string and compares them against a table's stored partition values. The catalog layer's `ResolvePruned` method (in `internal/catalog/service.go`) calls `planner.Prune` to build a `ReaderSQL` expression that reads from only the matching partitions.
+
+**Supported predicates:**
+- `=`, `IN`, `>`, `>=`, `<`, `<=` comparisons on partition columns
+- Multiple predicates combined with `AND`
+
+**Unsupported forms** (fall back to scanning all partitions — correctness-preserving):
+- `OR` / `NOT` at the top level
+- Expressions or function calls on partition columns
+- Non-partition column predicates (pruning is purely partition-column-based)

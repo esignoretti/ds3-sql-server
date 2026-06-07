@@ -86,6 +86,26 @@ export DS3SQL_STORAGE_HDD_ENDPOINT=https://hdd-gateway.example.com
 | `DS3SQL_STORAGE_HDD_BUCKET` | `storage.classes.hdd.bucket` |
 | `DS3SQL_STORAGE_HDD_ENDPOINT` | `storage.classes.hdd.endpoint` |
 
+## Metastore Configuration
+
+The metadata store (datasets, tables, jobs, cache index, schedules) uses an embedded SQLite database by default. An optional Postgres backend is available for high-availability deployments.
+
+| Setting | Env Variable | Default | Description |
+|---------|-------------|---------|-------------|
+| `metastore.driver` | `DS3SQL_METASTORE_DRIVER` | `sqlite` | Backend driver: `sqlite` (embedded) or `postgres` |
+| `metastore.path` | `DS3SQL_METASTORE_PATH` | `~/.ds3sql/metastore.db` | SQLite database file path (used when `driver=sqlite`) |
+| `metastore.dsn` | `DS3SQL_METASTORE_DSN` | — | Postgres DSN (required when `driver=postgres`) |
+
+Example Postgres configuration:
+
+```yaml
+metastore:
+  driver: postgres
+  dsn: "postgres://ds3:secret@db.internal:5432/ds3sql?sslmode=require"
+```
+
+The test suite uses `DS3SQL_TEST_POSTGRES_DSN` (separate from `metastore.dsn`) to run the conformance suite against a real Postgres instance during CI.
+
 ## Scheduler Role
 
 The cron-driven scheduler runs only on nodes with `role: coordinator` or `role: all`. Worker-only nodes do not run the scheduler tick loop. Configure role via:

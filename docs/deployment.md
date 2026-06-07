@@ -74,6 +74,33 @@ spec:
               cpu: "500m"
 ```
 
+## High-Availability Coordinator (Postgres)
+
+For production deployments requiring coordinator-level fault tolerance, multiple coordinator processes can share a single Postgres metastore:
+
+```bash
+# Coordinator 1
+DS3SQL_METASTORE_DRIVER=postgres \
+DS3SQL_METASTORE_DSN="postgres://ds3:secret@db.internal:5432/ds3sql?sslmode=require" \
+ds3sql-server --role=coordinator
+
+# Coordinator 2 (same Postgres database)
+DS3SQL_METASTORE_DRIVER=postgres \
+DS3SQL_METASTORE_DSN="postgres://ds3:secret@db.internal:5432/ds3sql?sslmode=require" \
+ds3sql-server --role=coordinator
+```
+
+Each coordinator runs the cron-driven scheduler and API independently, sharing the same datasets, tables, jobs, cache index, and schedules via the Postgres backend. The SQLite driver remains the default for single-process development and small deployments — no external database required.
+
+When running with a Postgres metastore, both coordinators must use the same `DS3SQL_CLUSTER_SHARED_SECRET` if worker nodes are registered.
+
+**CI / Testing:** The conformance suite runs against both backends. Set `DS3SQL_TEST_POSTGRES_DSN` to a Postgres URI to also execute the Postgres-backed tests:
+
+```bash
+DS3SQL_TEST_POSTGRES_DSN="postgres://test:test@localhost:5432/ds3sql_test?sslmode=disable" \
+  go test ./internal/metastore/...
+```
+
 ## Configuration
 
 See the [Configuration Reference](configuration.md) for all available settings.

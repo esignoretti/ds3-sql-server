@@ -18,6 +18,10 @@ A lightweight, stateless sidecar service that enables SQL querying of data store
 - **Connection pooling** — warm DuckDB pool eliminates per-query setup overhead (configurable pool size)
 - **Storage-class tiering** — route managed table data to SSD or HDD DS3 buckets
 - **Managed & external tables** — register external S3 locations or let the write path manage your data lifecycle
+- **Catalog browser** — datasets → tables → columns tree in the left nav (JSON API + server-rendered fragment), with raw bucket browsing demoted to a secondary tab
+- **Jobs panel** — query/CTAS/load job history in the query tab; click a job to restore its SQL into the editor
+- **Postgres metastore** — optional `DS3SQL_METASTORE_DRIVER=postgres` backend for high-availability coordinator deployments; shared conformance suite verifies identical behaviour with the default SQLite store
+- **Partition pruning** — `WHERE` filters on partition columns automatically reduce the set of files scanned (`=`, `IN`, `>`, `>=`, `<`, `<=`, combined with `AND`); unsupported forms fall back to a full scan (correctness-preserving)
 
 ## Quick Start
 
