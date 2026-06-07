@@ -44,7 +44,7 @@ function loadJob(id) {
         var status = document.getElementById('query-status');
         if (status) status.innerHTML = (j.result.row_count || 0) + ' rows (from job ' + escHtml(id) + ')';
         if (typeof renderPage === 'function' && j.result.row_count) {
-          document.getElementById('export-bar').style.display = 'flex';
+          document.getElementById('export-bar-sql').style.display = 'flex';
           renderPage();
         }
       }

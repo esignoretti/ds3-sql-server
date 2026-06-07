@@ -16,7 +16,7 @@ function runQuery() {
   status.innerHTML = 'Running...';
   results.innerHTML = '';
     document.getElementById('page-controls').style.display = 'none';
-    document.getElementById('export-bar').style.display = 'none';
+document.getElementById('export-bar-sql').style.display = 'none';
     var btnAnalyze = document.getElementById('btn-analyze-results');
     if (btnAnalyze) { btnAnalyze.style.opacity = '0.4'; btnAnalyze.style.pointerEvents = 'none'; }
     fetch('/query?project=' + encodeURIComponent(tabState.browse.project), {
@@ -37,7 +37,7 @@ function runQuery() {
     if (badge && tabState.browse.selectedFiles.length) {
       badge.textContent = tabState.browse.selectedFiles.length + ' file(s)';
     }
-    document.getElementById('export-bar').style.display = d.row_count ? 'flex' : 'none';
+    document.getElementById('export-bar-sql').style.display = d.row_count ? 'flex' : 'none';
     var btnAnalyze = document.getElementById('btn-analyze-results');
     if (btnAnalyze) { btnAnalyze.style.opacity = d.row_count ? '1' : '0.4'; btnAnalyze.style.pointerEvents = d.row_count ? 'auto' : 'none'; }
     if (!d.row_count) { results.innerHTML = '<p style="color:var(--text-muted);">No rows</p>'; return; }
@@ -97,7 +97,7 @@ function clearQuery() {
   document.getElementById('sql-editor').value = '';
   document.getElementById('query-status').innerHTML = '';
   document.getElementById('query-results').innerHTML = '';
-  document.getElementById('export-bar').style.display = 'none';
+  document.getElementById('export-bar-sql').style.display = 'none';
   document.getElementById('page-controls').style.display = 'none';
   tabState.query.results = null;
   var btnAnalyze = document.getElementById('btn-analyze-results');
