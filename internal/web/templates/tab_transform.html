@@ -24,10 +24,60 @@
         <p style="color:var(--text-muted);font-size:0.85rem;">Click files in the browser to add them here.</p>
       </div>
       <div id="transform-config-area" style="display:none;margin-top:0.75rem;"></div>
+
+      <!-- Step 4: Schedule -->
+      <div id="tf-schedule-area" style="margin-top:0.75rem;display:none;">
+        <div class="card" style="padding:0.5rem;">
+          <h4 style="font-size:0.85rem;margin-bottom:0.25rem;">Step 4: Schedule</h4>
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.5rem;">
+            <label style="font-size:0.85rem;display:flex;align-items:center;gap:0.25rem;"><input type="radio" name="tf-schedule-mode" value="once" checked onchange="tfToggleSchedule()"> Run once</label>
+            <label style="font-size:0.85rem;display:flex;align-items:center;gap:0.25rem;"><input type="radio" name="tf-schedule-mode" value="schedule" onchange="tfToggleSchedule()"> Run on schedule</label>
+          </div>
+          <div id="tf-cron-area" style="display:none;margin-top:0.5rem;">
+            <label style="font-size:0.85rem;color:var(--text-muted);">Cron preset:</label>
+            <select id="tf-cron-preset" class="input" style="width:auto;min-width:150px;font-size:0.8rem;" onchange="tfCronPresetChange()">
+              <option value="">Custom...</option>
+              <option value="* * * * *">Every minute</option>
+              <option value="0 * * * *">Every hour</option>
+              <option value="0 0 * * *">Daily (midnight)</option>
+              <option value="0 0 * * 0">Weekly (Sunday)</option>
+              <option value="0 0 1 * *">Monthly (1st)</option>
+            </select>
+            <label style="font-size:0.85rem;color:var(--text-muted);margin-left:0.5rem;">Custom cron:</label>
+            <input type="text" id="tf-cron-custom" class="input" style="width:140px;font-size:0.8rem;font-family:monospace;" placeholder="* * * * *" onchange="tfClearCronPreset()">
+            <span id="tf-cron-preview" style="font-size:0.8rem;color:var(--text-muted);margin-left:0.5rem;"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5: Post-action -->
+      <div id="tf-postaction-area" style="margin-top:0.75rem;display:none;">
+        <div class="card" style="padding:0.5rem;">
+          <h4 style="font-size:0.85rem;margin-bottom:0.25rem;">Step 5: After Conversion</h4>
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.5rem;">
+            <label style="font-size:0.85rem;display:flex;align-items:center;gap:0.25rem;"><input type="radio" name="tf-post-action" value="" checked onchange="tfTogglePostAction()"> Keep original files</label>
+            <label style="font-size:0.85rem;display:flex;align-items:center;gap:0.25rem;"><input type="radio" name="tf-post-action" value="delete" onchange="tfTogglePostAction()"> Delete after conversion</label>
+            <label style="font-size:0.85rem;display:flex;align-items:center;gap:0.25rem;"><input type="radio" name="tf-post-action" value="move" onchange="tfTogglePostAction()"> Move to another bucket</label>
+          </div>
+          <div id="tf-move-area" style="display:none;margin-top:0.5rem;">
+            <label style="font-size:0.85rem;color:var(--text-muted);">Target bucket:</label>
+            <select id="tf-move-bucket" class="input" style="width:auto;min-width:150px;font-size:0.8rem;">
+              <option value="">Select bucket...</option>
+            </select>
+            <label style="font-size:0.85rem;color:var(--text-muted);margin-left:0.5rem;">Prefix:</label>
+            <input type="text" id="tf-move-prefix" class="input" style="width:200px;font-size:0.8rem;font-family:monospace;" placeholder="converted/">
+          </div>
+        </div>
+      </div>
+
       <div id="tf-convert-progress" style="display:none;margin-top:0.75rem;"></div>
       <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
         <button class="btn" style="font-size:0.8rem;padding:0.25rem 0.75rem;" onclick="tfStartConvert()">⬇ Convert to Parquet</button>
+        <button class="btn btn-secondary" style="font-size:0.8rem;padding:0.25rem 0.75rem;display:none;" onclick="tfStartSchedule()" id="tf-schedule-btn">Create Schedule</button>
         <label style="font-size:0.8rem;color:var(--text-muted);display:flex;align-items:center;gap:0.25rem;"><input type="checkbox" id="tf-delete-original"> Delete original</label>
+      </div>
+      <div style="margin-top:0.5rem;">
+        <a href="#" onclick="navigateToTab('schedules');return false;" style="font-size:0.8rem;color:var(--primary);">View Schedules</a>
       </div>
     </div>
   </div>
@@ -35,4 +85,5 @@
 
 <script src="/static/column_config.js"></script>
 <script src="/static/transform.js"></script>
+<script src="/static/schedules.js"></script>
 {{end}}

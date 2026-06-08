@@ -61,6 +61,7 @@ function switchTab(tabName) {
   if (tabName === 'report') renderReportTab();
   if (tabName === 'transform') renderTransformTab();
   if (tabName === 'query' && typeof loadJobsPanel === 'function') loadJobsPanel();
+  if (tabName === 'schedules' && typeof renderSchedulesTab === 'function') renderSchedulesTab();
 }
 
 function renderTransformTab() {
@@ -74,6 +75,8 @@ function renderTransformTab() {
   if (!convertible.length && !tabState.transform.pendingFile) {
     list.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">No files selected for conversion. Use the browser on the left to find and click files.</p>';
     if (configArea) configArea.style.display = 'none';
+    document.getElementById('tf-schedule-area').style.display = 'none';
+    document.getElementById('tf-postaction-area').style.display = 'none';
     return;
   }
 
@@ -87,6 +90,12 @@ function renderTransformTab() {
   html += '<button class="btn btn-secondary" style="font-size:0.8rem;margin-top:0.5rem;" onclick="tabState.browse.selectedFiles = []; renderTransformTab(); updateTabBadges();">Clear</button>';
   html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.75rem;">Configure column parsing below, then click Save & Convert.</div>';
   list.innerHTML = html;
+
+  // Show schedule and post-action areas
+  var scheduleArea = document.getElementById('tf-schedule-area');
+  var postactionArea = document.getElementById('tf-postaction-area');
+  if (scheduleArea) scheduleArea.style.display = 'block';
+  if (postactionArea) postactionArea.style.display = 'block';
 
   // Determine which file to configure
   var bucket = '';
@@ -192,14 +201,14 @@ function resetDownstreamTabs(from) {
 
 window.addEventListener('hashchange', function() {
   var tab = window.location.hash.replace('#', '') || 'catalog';
-  if (['catalog','transform','query','analyze','report'].indexOf(tab) >= 0) {
+  if (['catalog','transform','schedules','query','analyze','report'].indexOf(tab) >= 0) {
     switchTab(tab);
   }
 });
 
 document.addEventListener('DOMContentLoaded', function() {
   var tab = window.location.hash.replace('#', '') || 'catalog';
-  if (['catalog','transform','query','analyze','report'].indexOf(tab) >= 0) {
+  if (['catalog','transform','schedules','query','analyze','report'].indexOf(tab) >= 0) {
     switchTab(tab);
   } else {
     switchTab('catalog');
