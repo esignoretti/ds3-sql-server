@@ -553,6 +553,28 @@ func main() {
 			}
 			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
 		})
+		r.Put("/schedules/{id}", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
+			for _, p := range session.Projects {
+				if projectID == "" || p.ProjectID == projectID {
+					scheduleHandler.UpdateForProject(w, r, p.ProjectID)
+					return
+				}
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
+		r.Get("/schedules/{id}", func(w http.ResponseWriter, r *http.Request) {
+			session := auth.GetSession(r)
+			projectID := r.URL.Query().Get("project")
+			for _, p := range session.Projects {
+				if projectID == "" || p.ProjectID == projectID {
+					scheduleHandler.GetForProject(w, r, p.ProjectID)
+					return
+				}
+			}
+			http.Error(w, `{"error":"select a project first"}`, http.StatusBadRequest)
+		})
 		r.Get("/schedules", func(w http.ResponseWriter, r *http.Request) {
 			session := auth.GetSession(r)
 			projectID := r.URL.Query().Get("project")
