@@ -58,3 +58,14 @@ func (c *Client) GetObject(ctx context.Context, bucket, key string) (io.ReadClos
 	}
 	return out.Body, nil
 }
+
+// CopyObject copies an object from source bucket/key to destination bucket/key.
+func (c *Client) CopyObject(ctx context.Context, srcBucket, srcKey, dstBucket, dstKey string) error {
+	src := "/" + srcBucket + "/" + srcKey
+	_, err := c.client.CopyObject(ctx, &awss3.CopyObjectInput{
+		Bucket:     &dstBucket,
+		CopySource: &src,
+		Key:        &dstKey,
+	})
+	return err
+}
