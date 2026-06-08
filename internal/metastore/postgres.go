@@ -86,12 +86,18 @@ func (s *PostgresStore) migrate() error {
 			last_access_at TIMESTAMPTZ NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS schedules (
-			id          TEXT PRIMARY KEY,
-			project_id  TEXT NOT NULL,
-			cron        TEXT NOT NULL,
-			sql         TEXT NOT NULL,
-			into_table  TEXT NOT NULL DEFAULT '',
-			owner       TEXT NOT NULL DEFAULT '',
+			id           TEXT PRIMARY KEY,
+			project_id   TEXT NOT NULL,
+			cron         TEXT NOT NULL,
+			sql          TEXT NOT NULL,
+			into_table   TEXT NOT NULL DEFAULT '',
+			owner        TEXT NOT NULL DEFAULT '',
+			type         TEXT NOT NULL DEFAULT 'query',
+			source       TEXT NOT NULL DEFAULT '',
+			format       TEXT NOT NULL DEFAULT '',
+			post_action  TEXT NOT NULL DEFAULT '',
+			move_bucket  TEXT NOT NULL DEFAULT '',
+			move_prefix  TEXT NOT NULL DEFAULT '',
 			next_run_at TIMESTAMPTZ,
 			last_run_at TIMESTAMPTZ,
 			running     BOOLEAN NOT NULL DEFAULT FALSE,
@@ -101,6 +107,20 @@ func (s *PostgresStore) migrate() error {
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
 			return fmt.Errorf("migrate: %w", err)
+		}
+	}
+	// Add columns for existing databases (Postgres supports IF NOT EXISTS).
+	alterStmts := []string{
+		"ALTER TABLE schedules ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'query'",
+		"ALTER TABLE schedules ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE schedules ADD COLUMN IF NOT EXISTS format TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE schedules ADD COLUMN IF NOT EXISTS post_action TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE schedules ADD COLUMN IF NOT EXISTS move_bucket TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE schedules ADD COLUMN IF NOT EXISTS move_prefix TEXT NOT NULL DEFAULT ''",
+	}
+	for _, q := range alterStmts {
+		if _, err := s.db.Exec(q); err != nil {
+			return fmt.Errorf("migrate (alter): %w", err)
 		}
 	}
 	return nil
@@ -483,10 +503,14 @@ func (s *PostgresStore) CreateSchedule(ctx context.Context, sc *Schedule) error 
 	if sc.CreatedAt.IsZero() {
 		sc.CreatedAt = time.Now().UTC()
 	}
+	if sc.Type == "" {
+		sc.Type = "query"
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO schedules (id, project_id, cron, sql, into_table, owner, next_run_at, last_run_at, running, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		`INSERT INTO schedules (`+pgScheduleCols+`)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 		sc.ID, sc.ProjectID, sc.Cron, sc.SQL, sc.IntoTable, sc.Owner,
+		sc.Type, sc.Source, sc.Format, sc.PostAction, sc.MoveBucket, sc.MovePrefix,
 		nullTime(sc.NextRunAt), nullTime(sc.LastRunAt), sc.Running, sc.CreatedAt.UTC())
 	if err != nil {
 		return fmt.Errorf("create schedule: %w", err)
@@ -498,6 +522,7 @@ func scanPgSchedule(row interface{ Scan(...any) error }) (*Schedule, error) {
 	var sc Schedule
 	var next, last sql.NullTime
 	err := row.Scan(&sc.ID, &sc.ProjectID, &sc.Cron, &sc.SQL, &sc.IntoTable, &sc.Owner,
+		&sc.Type, &sc.Source, &sc.Format, &sc.PostAction, &sc.MoveBucket, &sc.MovePrefix,
 		&next, &last, &sc.Running, &sc.CreatedAt)
 	if err != nil {
 		return nil, err
@@ -508,7 +533,7 @@ func scanPgSchedule(row interface{ Scan(...any) error }) (*Schedule, error) {
 	return &sc, nil
 }
 
-const pgScheduleCols = `id, project_id, cron, sql, into_table, owner, next_run_at, last_run_at, running, created_at`
+const pgScheduleCols = `id, project_id, cron, sql, into_table, owner, type, source, format, post_action, move_bucket, move_prefix, next_run_at, last_run_at, running, created_at`
 
 func (s *PostgresStore) ListSchedules(ctx context.Context, projectID string) ([]*Schedule, error) {
 	rows, err := s.db.QueryContext(ctx,
@@ -556,6 +581,27 @@ func (s *PostgresStore) SetScheduleNextRun(ctx context.Context, id string, next 
 		`UPDATE schedules SET next_run_at = $1 WHERE id = $2`,
 		nullTime(next), id)
 	return err
+}
+
+func (s *PostgresStore) UpdateSchedule(ctx context.Context, sc *Schedule) error {
+	if sc.Type == "" {
+		sc.Type = "query"
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE schedules SET cron=$1, sql=$2, into_table=$3, owner=$4, type=$5, source=$6, format=$7,
+		 post_action=$8, move_bucket=$9, move_prefix=$10, next_run_at=$11, last_run_at=$12, running=$13
+		 WHERE id=$14 AND project_id=$15`,
+		sc.Cron, sc.SQL, sc.IntoTable, sc.Owner,
+		sc.Type, sc.Source, sc.Format, sc.PostAction, sc.MoveBucket, sc.MovePrefix,
+		nullTime(sc.NextRunAt), nullTime(sc.LastRunAt), sc.Running,
+		sc.ID, sc.ProjectID)
+	if err != nil {
+		return fmt.Errorf("update schedule: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *PostgresStore) UpdateScheduleRun(ctx context.Context, id string, lastRun time.Time, running bool) error {

@@ -116,6 +116,7 @@ type Store interface {
 
 	// Schedule
 	CreateSchedule(ctx context.Context, sch *Schedule) error
+	UpdateSchedule(ctx context.Context, sch *Schedule) error
 	ListSchedules(ctx context.Context, projectID string) ([]*Schedule, error)
 	GetSchedule(ctx context.Context, id string) (*Schedule, error)
 	DeleteSchedule(ctx context.Context, id, projectID string) error
@@ -126,19 +127,27 @@ type Store interface {
 	Close() error
 }
 
-// Schedule is a cron-driven query/CTAS/load. NextRunAt drives due selection;
+// Schedule is a cron-driven query/CTAS/load/convert. NextRunAt drives due selection;
 // Running guards against overlapping runs (misfire policy: skip if still running).
+// For "convert" schedules, Source/Format configure the input and PostAction/Move* control
+// what happens to the source files after successful conversion.
 type Schedule struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"project_id"`
-	Cron      string    `json:"cron"`
-	SQL       string    `json:"sql"`
-	IntoTable string    `json:"into_table"`
-	Owner     string    `json:"owner"`
-	NextRunAt time.Time `json:"next_run_at"`
-	LastRunAt time.Time `json:"last_run_at"`
-	Running   bool      `json:"running"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	ProjectID   string    `json:"project_id"`
+	Cron        string    `json:"cron"`
+	SQL         string    `json:"sql"`
+	IntoTable   string    `json:"into_table"`
+	Owner       string    `json:"owner"`
+	Type        string    `json:"type"`                   // "query"|"ctas"|"load"|"convert"
+	Source      string    `json:"source"`                 // s3 path/glob for convert source
+	Format      string    `json:"format"`                 // source format
+	PostAction  string    `json:"post_action"`            // "" | "delete" | "move"
+	MoveBucket  string    `json:"move_bucket"`            // target bucket for move
+	MovePrefix  string    `json:"move_prefix"`            // target prefix for move
+	NextRunAt   time.Time `json:"next_run_at"`
+	LastRunAt   time.Time `json:"last_run_at"`
+	Running     bool      `json:"running"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // ErrNotFound is returned when a dataset or table does not exist.

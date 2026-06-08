@@ -80,22 +80,40 @@ func (s *SQLiteStore) migrate() error {
 			last_access_at TEXT NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS schedules (
-			id          TEXT PRIMARY KEY,
-			project_id  TEXT NOT NULL,
-			cron        TEXT NOT NULL,
-			sql         TEXT NOT NULL,
-			into_table  TEXT NOT NULL,
-			owner       TEXT NOT NULL,
-			next_run_at TEXT NOT NULL,
-			last_run_at TEXT NOT NULL,
-			running     INTEGER NOT NULL,
-			created_at  TEXT NOT NULL
+			id           TEXT PRIMARY KEY,
+			project_id   TEXT NOT NULL,
+			cron         TEXT NOT NULL,
+			sql          TEXT NOT NULL,
+			into_table   TEXT NOT NULL,
+			owner        TEXT NOT NULL,
+			type         TEXT NOT NULL DEFAULT 'query',
+			source       TEXT NOT NULL DEFAULT '',
+			format       TEXT NOT NULL DEFAULT '',
+			post_action  TEXT NOT NULL DEFAULT '',
+			move_bucket  TEXT NOT NULL DEFAULT '',
+			move_prefix  TEXT NOT NULL DEFAULT '',
+			next_run_at  TEXT NOT NULL,
+			last_run_at  TEXT NOT NULL,
+			running      INTEGER NOT NULL,
+			created_at   TEXT NOT NULL
 		)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
 			return fmt.Errorf("migrate: %w", err)
 		}
+	}
+	// Add columns for existing databases (ignore errors if column already exists).
+	alterStmts := []string{
+		"ALTER TABLE schedules ADD COLUMN type TEXT NOT NULL DEFAULT 'query'",
+		"ALTER TABLE schedules ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE schedules ADD COLUMN format TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE schedules ADD COLUMN post_action TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE schedules ADD COLUMN move_bucket TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE schedules ADD COLUMN move_prefix TEXT NOT NULL DEFAULT ''",
+	}
+	for _, q := range alterStmts {
+		s.db.Exec(q) // ignore error — column may already exist
 	}
 	return nil
 }
@@ -465,14 +483,15 @@ func likeEscape(s string) string {
 
 // ── Schedule helpers ──────────────────────────────────────────────
 
-const scheduleCols = `id, project_id, cron, sql, into_table, owner, next_run_at, last_run_at, running, created_at`
+const scheduleCols = `id, project_id, cron, sql, into_table, owner, type, source, format, post_action, move_bucket, move_prefix, next_run_at, last_run_at, running, created_at`
 
 func scanSchedule(row interface{ Scan(...any) error }) (*Schedule, error) {
 	var sch Schedule
 	var next, last, created string
 	var running int
 	if err := row.Scan(&sch.ID, &sch.ProjectID, &sch.Cron, &sch.SQL, &sch.IntoTable,
-		&sch.Owner, &next, &last, &running, &created); err != nil {
+		&sch.Owner, &sch.Type, &sch.Source, &sch.Format, &sch.PostAction, &sch.MoveBucket, &sch.MovePrefix,
+		&next, &last, &running, &created); err != nil {
 		return nil, err
 	}
 	sch.NextRunAt = parseTime(next)
@@ -486,16 +505,45 @@ func (s *SQLiteStore) CreateSchedule(ctx context.Context, sch *Schedule) error {
 	if sch.CreatedAt.IsZero() {
 		sch.CreatedAt = time.Now().UTC()
 	}
+	if sch.Type == "" {
+		sch.Type = "query"
+	}
 	running := 0
 	if sch.Running {
 		running = 1
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO schedules (`+scheduleCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO schedules (`+scheduleCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		sch.ID, sch.ProjectID, sch.Cron, sch.SQL, sch.IntoTable, sch.Owner,
+		sch.Type, sch.Source, sch.Format, sch.PostAction, sch.MoveBucket, sch.MovePrefix,
 		fmtTime(sch.NextRunAt), fmtTime(sch.LastRunAt), running, fmtTime(sch.CreatedAt))
 	if err != nil {
 		return fmt.Errorf("create schedule: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) UpdateSchedule(ctx context.Context, sch *Schedule) error {
+	if sch.Type == "" {
+		sch.Type = "query"
+	}
+	running := 0
+	if sch.Running {
+		running = 1
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE schedules SET cron=?, sql=?, into_table=?, owner=?, type=?, source=?, format=?,
+		 post_action=?, move_bucket=?, move_prefix=?, next_run_at=?, last_run_at=?, running=?
+		 WHERE id=? AND project_id=?`,
+		sch.Cron, sch.SQL, sch.IntoTable, sch.Owner,
+		sch.Type, sch.Source, sch.Format, sch.PostAction, sch.MoveBucket, sch.MovePrefix,
+		fmtTime(sch.NextRunAt), fmtTime(sch.LastRunAt), running,
+		sch.ID, sch.ProjectID)
+	if err != nil {
+		return fmt.Errorf("update schedule: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
