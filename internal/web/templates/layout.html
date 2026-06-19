@@ -21,29 +21,16 @@
                     <img src="https://cdn.prod.website-files.com/67a4c547ac46cdf433fcc313/67b3c0496628451a2866ce80_logo%20cubbit.webp" alt="Cubbit" style="height:22px;width:auto;">
                     <span>DS3 SQL</span>
                 </div>
-                <div class="tab" data-tab="catalog" onclick="navigateToTab('catalog')">
-                    Catalog <span class="tab-badge"></span>
-                </div>
-
-                <div class="tab" data-tab="transform" onclick="navigateToTab('transform')">
-                    Transform <span class="tab-badge"></span>
-                </div>
-                <div class="tab" data-tab="schedules" onclick="navigateToTab('schedules')">
-                    Schedules <span class="tab-badge"></span>
-                </div>
-                <div class="tab" data-tab="query" onclick="navigateToTab('query')">
-                    Query <span class="tab-badge"></span>
-                </div>
-                <div class="tab" data-tab="analyze" onclick="navigateToTab('analyze')">
-                    Analyze <span class="tab-badge"></span>
-                </div>
-                <div class="tab" data-tab="report" onclick="navigateToTab('report')">
-                    Report <span class="tab-badge"></span>
-                </div>
+                <div class="tab" data-tab="catalog" onclick="navigateToTab('catalog')">Catalog<span class="tab-badge"></span></div>
+                <div class="tab" data-tab="transform" onclick="navigateToTab('transform')">Transform<span class="tab-badge"></span></div>
+                <div class="tab" data-tab="schedules" onclick="navigateToTab('schedules')">Schedules<span class="tab-badge"></span></div>
+                <div class="tab" data-tab="query" onclick="navigateToTab('query')">Query<span class="tab-badge"></span></div>
+                <div class="tab" data-tab="analyze" onclick="navigateToTab('analyze')">Analyze<span class="tab-badge"></span></div>
+                <div class="tab" data-tab="report" onclick="navigateToTab('report')">Report<span class="tab-badge"></span></div>
                 <div class="tab {{if eq .Page "reports"}}active{{end}}"><a href="/reports" style="color:inherit;text-decoration:none;">Saved Reports</a></div>
                 <div style="margin-left:auto;">
                     <form action="/auth/logout" method="GET" style="display:inline;">
-                        <button type="submit" class="btn-link" style="padding:0.75rem 0.75rem;font-size:0.85rem;color:var(--text-muted);">Logout</button>
+                        <button type="submit" class="btn-link" style="padding:0.75rem;font-size:0.85rem;color:var(--text-muted);">Logout</button>
                     </form>
                 </div>
             </div>

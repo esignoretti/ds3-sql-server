@@ -1,9 +1,12 @@
 {{define "tab_schedules"}}
 <div id="schedules-app">
-  <div class="card" style="max-width:900px;">
-    <h3 style="margin-bottom:0.75rem;">Schedules</h3>
+  <div class="card" style="max-width:960px;">
+    <div class="flex-between mb-sm">
+      <h3 style="margin:0;">Schedules</h3>
+      <button class="btn btn-secondary" onclick="loadSchedules()">↻ Refresh</button>
+    </div>
     <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">
-      Schedules run conversions or queries on a cron timer. Create them from the Transform tab.
+      Scheduled conversions and queries run automatically on a cron timer. Create new schedules from the <a href="#" onclick="navigateToTab('transform');return false;" class="btn-link">Transform tab</a>.
     </p>
     <div id="schedules-list">
       <p style="color:var(--text-muted);font-size:0.85rem;">Select a project to view schedules.</p>

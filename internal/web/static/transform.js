@@ -92,6 +92,21 @@ function tfToggleFile(path, spanEl) {
   }
   renderTransformTab();
   updateTabBadges();
+  if (tabState.browse.selectedFiles.length > 0) tfStep(0);
+}
+
+function tfStep(n) {
+  var steps = document.querySelectorAll('#tf-steps .step');
+  steps.forEach(function(s, i) {
+    s.classList.remove('active', 'done');
+    if (i < n) s.classList.add('done');
+    else if (i === n) s.classList.add('active');
+  });
+  // Show schedule and post-action sections based on step
+  var schedArea = document.getElementById('tf-schedule-area');
+  var postArea = document.getElementById('tf-postaction-area');
+  if (schedArea) schedArea.style.display = n >= 2 ? 'block' : 'none';
+  if (postArea) postArea.style.display = n >= 3 ? 'block' : 'none';
 }
 
 function tfConfigure(bucket, fileKey) {
@@ -103,6 +118,7 @@ function tfConfigure(bucket, fileKey) {
   }
   tabState.transform.pendingBucket = bucket;
   tabState.transform.pendingFile = fileKey;
+  tfStep(1);
   renderTransformTab();
 }
 
@@ -153,6 +169,118 @@ function tfPollConvert(jobId, bucket) {
         el.innerHTML = html;
       }
     });
+}
+
+// ── Schedule & Post-action toggles (called from HTML) ──────────
+
+function tfToggleSchedule() {
+  var modeEls = document.getElementsByName('tf-schedule-mode');
+  var isSchedule = false;
+  modeEls.forEach(function(el) { if (el.checked && el.value === 'schedule') isSchedule = true; });
+  var cronArea = document.getElementById('tf-cron-area');
+  var schedBtn = document.getElementById('tf-schedule-btn');
+  if (cronArea) cronArea.style.display = isSchedule ? 'block' : 'none';
+  if (schedBtn) schedBtn.style.display = isSchedule ? 'inline-block' : 'none';
+  tfStep(isSchedule ? 2 : 1);
+}
+
+function tfCronPresetChange() {
+  var preset = document.getElementById('tf-cron-preset').value;
+  var customInput = document.getElementById('tf-cron-custom');
+  if (preset) {
+    customInput.value = preset;
+    tfUpdateCronPreview(preset);
+  }
+}
+
+function tfClearCronPreset() {
+  document.getElementById('tf-cron-preset').value = '';
+  tfUpdateCronPreview(document.getElementById('tf-cron-custom').value);
+}
+
+function tfUpdateCronPreview(expr) {
+  var preview = document.getElementById('tf-cron-preview');
+  if (!preview) return;
+  if (!expr) { preview.textContent = ''; return; }
+  var descs = {
+    '* * * * *': 'Every minute',
+    '0 * * * *': 'Every hour',
+    '0 0 * * *': 'Daily at midnight',
+    '0 0 * * 0': 'Weekly on Sunday',
+    '0 0 1 * *': 'Monthly on 1st'
+  };
+  preview.textContent = descs[expr] || 'Custom: ' + expr;
+}
+
+function tfTogglePostAction() {
+  var modeEls = document.getElementsByName('tf-post-action');
+  var isMove = false, isKeep = true;
+  modeEls.forEach(function(el) {
+    if (el.checked) {
+      if (el.value === 'move') isMove = true;
+      if (el.value !== '') isKeep = false;
+    }
+  });
+  var moveArea = document.getElementById('tf-move-area');
+  if (moveArea) moveArea.style.display = isMove ? 'flex' : 'none';
+  tfStep(isKeep ? 0 : isMove ? 3 : 2);
+
+  if (isMove && tabState.browse.project) {
+    var sel = document.getElementById('tf-move-bucket');
+    if (sel && sel.options.length <= 1) {
+      sel.innerHTML = '<option value="">Loading buckets...</option>';
+      fetch('/buckets?project=' + encodeURIComponent(tabState.browse.project))
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.error) { sel.innerHTML = '<option value="">' + escHtml(d.error) + '</option>'; return; }
+          var html = '<option value="">Select target bucket...</option>';
+          (d.buckets || []).forEach(function(b) { html += '<option value="' + escAttr(b.name) + '">' + escHtml(b.name) + '</option>'; });
+          sel.innerHTML = html;
+        });
+    }
+  }
+}
+
+function tfStartSchedule() {
+  var files = tabState.browse.selectedFiles.filter(function(p) { return !isQueryable(p); });
+  if (!files.length) { alert('No convertible files selected.'); return; }
+  var cronCustom = document.getElementById('tf-cron-custom');
+  var cron = cronCustom ? cronCustom.value.trim() : '';
+  if (!cron) { alert('Please enter a cron expression.'); return; }
+
+  var postAction = '', moveBucket = '', movePrefix = '';
+  document.getElementsByName('tf-post-action').forEach(function(el) { if (el.checked) postAction = el.value; });
+  if (postAction === 'move') {
+    moveBucket = document.getElementById('tf-move-bucket') ? document.getElementById('tf-move-bucket').value : '';
+    movePrefix = document.getElementById('tf-move-prefix') ? document.getElementById('tf-move-prefix').value : '';
+    if (!moveBucket) { alert('Please select a target bucket for move.'); return; }
+  }
+
+  var bucket = files[0].replace(/^s3:\/\//, '').split('/')[0];
+  var firstKey = files[0].replace(/^s3:\/\/[^\/]+\//, '');
+  var parts = firstKey.split('/');
+  var fileName = parts.pop();
+  var ext = fileName.includes('.') ? fileName.split('.').pop() : '*';
+  var source = 's3://' + bucket + '/' + (parts.length ? parts.join('/') + '/' : '') + '*.' + ext;
+
+  var progress = document.getElementById('tf-convert-progress');
+  if (progress) { progress.style.display = 'block'; progress.innerHTML = '<p style="color:var(--text-muted);">Creating schedule...</p>'; }
+
+  fetch('/schedules?project=' + encodeURIComponent(tabState.browse.project), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({cron: cron, type: 'convert', source: source, format: 'text', post_action: postAction, move_bucket: moveBucket, move_prefix: movePrefix, sql: ''})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(sch) {
+    if (sch.error) throw new Error(sch.error);
+    if (progress) progress.innerHTML = '<p style="color:var(--green-500);">Schedule created! <a href="#" onclick="navigateToTab(\'schedules\');return false;" class="btn-link">View schedules</a></p>';
+    updateTabBadges();
+  })
+  .catch(function(e) {
+    if (progress) progress.innerHTML = '<span style="color:var(--red);">Error: ' + e.message + '</span>';
+    else alert('Error: ' + e.message);
+  });
 }
 
 function fmtSize(b) {
